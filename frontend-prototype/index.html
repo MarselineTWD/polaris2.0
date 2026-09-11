@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#050914" />
+  <title>POLARIS — центр управления группировкой</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="POLARIS, главная">
+        <span class="brand-mark">◉</span>
+        <span><strong>POLARIS</strong><small>CONSTELLATION LAB</small></span>
+      </a>
+
+      <div class="project-heading">
+        <div class="project-name" id="project-name">Полная группировка</div>
+        <div class="project-meta"><span id="header-count">48 аппаратов</span><i></i>3 плоскости<i></i>24 часа</div>
+      </div>
+
+      <div class="calculation-state"><span></span>Расчёт актуален</div>
+
+      <div class="top-actions">
+        <button class="button button-subtle" id="compare-button" type="button">⇄ <span>Сравнить</span></button>
+        <button class="button button-subtle" id="export-button" type="button">↓ <span>Экспорт</span></button>
+        <button class="button button-primary" id="calculate-button" type="button">▶ <span>Пересчитать</span></button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <nav class="side-nav" aria-label="Разделы">
+        <button class="nav-item active" data-section="overview" type="button"><span>◎</span><small>Обзор</small></button>
+        <button class="nav-item" data-section="configuration" type="button"><span>⌁</span><small>Проект</small></button>
+        <button class="nav-item" data-section="failures" type="button"><span>⚠</span><small>Отказы</small></button>
+        <button class="nav-item" data-section="analytics" type="button"><span>⌁</span><small>Анализ</small></button>
+        <button class="nav-item" data-section="variants" type="button"><span>▱</span><small>Варианты</small></button>
+        <div class="nav-spacer"></div>
+        <button class="nav-item" data-section="settings" type="button"><span>⚙</span><small>Вид</small></button>
+      </nav>
+
+      <main class="main-column">
+        <section class="space-view" id="space-view">
+          <canvas id="space-canvas" aria-label="Интерактивная схема Земли и спутниковой группировки"></canvas>
+          <div class="webgl-error" id="webgl-error" hidden></div>
+
+          <div class="scene-toolbar">
+            <div class="stage-control" aria-label="Этап развёртывания">
+              <button data-stage="1" type="button">Этап 1</button>
+              <button data-stage="2" type="button">Этап 2</button>
+              <button data-stage="3" class="active" type="button">Этап 3</button>
+            </div>
+            <div class="time-chip"><span class="pulse"></span><strong id="scene-time">06:00</strong> UTC</div>
+          </div>
+
+          <div class="scene-stats">
+            <div><span>Активные аппараты</span><strong id="active-count">48</strong></div>
+            <div><span>Связи в сети</span><strong id="links-count">82</strong></div>
+            <div><span>Выбранный маршрут</span><strong id="route-hops">3 перехода</strong></div>
+          </div>
+
+          <div class="view-controls">
+            <button id="home-camera" type="button" title="Сбросить камеру">⌂</button>
+            <button id="toggle-earth" class="active" type="button" title="Остановить вращение Земли">↻</button>
+            <button id="toggle-links" class="active" type="button" title="Показать связи">⌁</button>
+            <button id="toggle-orbits" class="active" type="button" title="Показать орбиты">◉</button>
+          </div>
+
+          <div class="scene-legend">
+            <span><i class="legend-dot active-sat"></i>Активен</span>
+            <span><i class="legend-dot route-sat"></i>В маршруте</span>
+            <span><i class="legend-dot failed-sat"></i>Недоступен</span>
+            <span><i class="legend-line"></i>Маршрут</span>
+          </div>
+
+          <div class="scene-hint">Перетащите, чтобы повернуть · колесо — масштаб</div>
+        </section>
+
+        <section class="timeline-panel">
+          <div class="timeline-header">
+            <div class="playback">
+              <button class="play-button" id="play-button" type="button" aria-label="Запустить или остановить время">Ⅱ</button>
+              <div><span>Состояние сети</span><strong id="timeline-time">06:00:00</strong></div>
+            </div>
+            <div class="timeline-actions">
+              <label>Скорость
+                <select id="speed-select">
+                  <option value="60">×60</option>
+                  <option value="300" selected>×300</option>
+                  <option value="900">×900</option>
+                </select>
+              </label>
+              <span>Шаг расчёта: 120 с</span>
+            </div>
+          </div>
+
+          <div class="scrubber-wrap">
+            <input id="time-range" type="range" min="0" max="86280" step="120" value="21600" aria-label="Время расчёта" />
+            <div class="time-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+          </div>
+
+          <div class="availability-lanes" id="availability-lanes"></div>
+          <div class="timeline-legend"><span><i class="available"></i>Маршрут доступен</span><span><i class="degraded"></i>Есть покрытие, но нет пути</span><span><i class="outage"></i>Нет покрытия</span></div>
+        </section>
+      </main>
+
+      <aside class="inspector">
+        <div class="inspector-topline"><span>НАЗЕМНЫЙ ТЕРМИНАЛ</span><button id="close-inspector" type="button">•••</button></div>
+        <h1 id="client-name">Northern terminal 70</h1>
+        <p id="client-coords">70.0° N · 90.0° E</p>
+
+        <div class="client-switch" aria-label="Выбрать терминал">
+          <button data-client="C65" type="button">C65</button>
+          <button data-client="C70" class="active" type="button">C70</button>
+          <button data-client="C72" type="button">C72</button>
+        </div>
+
+        <section class="availability-card">
+          <div class="metric-line"><strong id="availability-value">98,75%</strong><span class="goal-state">✓ Цель достигнута</span></div>
+          <p>Доступность маршрута за сутки</p>
+          <div class="progress-track"><span id="availability-progress"></span><i></i></div>
+          <div class="progress-label"><span>0%</span><span>Цель 90%</span><span>100%</span></div>
+        </section>
+
+        <section class="route-section">
+          <div class="section-title"><span>Текущий маршрут</span><strong><i></i>Доступен</strong></div>
+          <div class="route-chain" id="route-chain"></div>
+          <button class="text-action" id="focus-route" type="button">Показать маршрут на орбите →</button>
+        </section>
+
+        <section class="metrics-section">
+          <div class="section-title"><span>Показатели</span><em>24 часа</em></div>
+          <div class="metric-grid">
+            <div><span>Видимость</span><strong id="visibility-value">99,86%</strong></div>
+            <div><span>Макс. перерыв</span><strong id="outage-value">2 мин</strong></div>
+            <div><span>Средний маршрут</span><strong id="average-hops">2,66</strong></div>
+            <div><span>Резервных путей</span><strong id="backup-routes">2</strong></div>
+          </div>
+        </section>
+
+        <section class="recommendation">
+          <span>ВЫВОД СИСТЕМЫ</span>
+          <p id="recommendation-text">Конфигурация достигает целевой доступности для C70. Критических разрывов сети не обнаружено.</p>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
+  <aside class="drawer" id="configuration-drawer" aria-hidden="true">
+    <div class="drawer-header"><div><span>КОНФИГУРАЦИЯ</span><h2>Параметры проекта</h2></div><button class="icon-button" data-close-drawer type="button">×</button></div>
+    <div class="drawer-content">
+      <label class="field"><span>Сценарий</span><select id="scenario-select"><option value="full">Полная группировка</option><option value="first">Первая очередь запуска</option><option value="outages">Недоступность 10 аппаратов</option><option value="range">Дальность ISL 2000 км</option></select></label>
+      <div class="form-grid">
+        <label class="field"><span>Высота орбиты</span><div class="input-unit"><input value="550" type="number" /><small>км</small></div></label>
+        <label class="field"><span>Наклонение</span><div class="input-unit"><input value="87" type="number" /><small>°</small></div></label>
+        <label class="field"><span>Дальность ISL</span><div class="input-unit"><input id="isl-input" value="3000" type="number" /><small>км</small></div></label>
+        <label class="field"><span>Мин. возвышение</span><div class="input-unit"><input value="10" type="number" /><small>°</small></div></label>
+      </div>
+      <div class="drawer-section-title"><span>Орбитальные плоскости</span><small>RAAN / фазирование</small></div>
+      <div class="plane-editor">
+        <div><strong>P1</strong><label>RAAN <input value="0.0" type="number" /></label><label>Фаза <input value="0.0" type="number" /></label></div>
+        <div><strong>P2</strong><label>RAAN <input value="60.0" type="number" /></label><label>Фаза <input value="7.5" type="number" /></label></div>
+        <div><strong>P3</strong><label>RAAN <input value="120.0" type="number" /></label><label>Фаза <input value="15.0" type="number" /></label></div>
+      </div>
+      <div class="drawer-section-title"><span>События недоступности</span><button class="mini-action" id="add-failure" type="button">+ Добавить</button></div>
+      <div class="failure-list" id="failure-list"><div class="empty-state">В этом варианте нет заданных отказов</div></div>
+    </div>
+    <div class="drawer-footer"><button class="button button-subtle" data-close-drawer type="button">Отмена</button><button class="button button-primary" id="apply-config" type="button">Применить и рассчитать</button></div>
+  </aside>
+
+  <div class="modal-backdrop" id="compare-modal" aria-hidden="true">
+    <section class="compare-modal" role="dialog" aria-modal="true" aria-labelledby="compare-title">
+      <div class="drawer-header"><div><span>СРАВНЕНИЕ ВАРИАНТОВ</span><h2 id="compare-title">Полная группировка и первая очередь</h2></div><button class="icon-button" id="close-compare" type="button">×</button></div>
+      <div class="comparison-head"><div><span>Базовый вариант</span><strong>Полная группировка</strong><small>48 аппаратов · ISL 3000 км</small></div><div><span>Сравниваемый вариант</span><strong>Первая очередь</strong><small>16 аппаратов · ISL 3000 км</small></div></div>
+      <div class="comparison-table">
+        <div class="comparison-row header"><span>Терминал</span><span>Базовый</span><span>Новый</span><span>Изменение</span></div>
+        <div class="comparison-row"><strong>C65</strong><span>96,67%</span><span>27,22%</span><em>−69,45 п.п.</em></div>
+        <div class="comparison-row"><strong>C70</strong><span>98,75%</span><span>15,83%</span><em>−82,92 п.п.</em></div>
+        <div class="comparison-row"><strong>C72</strong><span>98,89%</span><span>12,64%</span><em>−86,25 п.п.</em></div>
+      </div>
+      <div class="compare-insight"><span>!</span><p><strong>Первая очередь не достигает целевых 90%.</strong> Самое заметное ухудшение наблюдается для C72: максимальный перерыв увеличивается до 796 минут.</p></div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script>
+    window.addEventListener("error", function (event) {
+      const panel = document.getElementById("webgl-error");
+      panel.hidden = false;
+      panel.textContent = "3D-сцена не запущена: " + (event.message || "ошибка загрузки WebGL");
+    });
+    window.addEventListener("unhandledrejection", function (event) {
+      const panel = document.getElementById("webgl-error");
+      panel.hidden = false;
+      panel.textContent = "3D-сцена не запущена: " + String(event.reason || "ошибка модуля");
+    });
+  </script>
+  <script src="vendor/three.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

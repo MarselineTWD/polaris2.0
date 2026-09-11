@@ -1,0 +1,328 @@
+<div id="orbit-command-concept" aria-label="Концепт центра управления спутниковой группировкой">
+  <style>
+    #orbit-command-concept {
+      --occ-bg: #050812;
+      --occ-panel: #0b1120;
+      --occ-panel-2: #10192c;
+      --occ-line: rgba(139, 173, 220, .17);
+      --occ-text: #eff6ff;
+      --occ-muted: #89a0bd;
+      --occ-accent: #63f5d2;
+      --occ-accent-2: #7b8cff;
+      --occ-danger: #ff627e;
+      --occ-warning: #ffc75c;
+      --occ-radius: 16px;
+      color: var(--occ-text);
+      background:
+        radial-gradient(circle at 46% 25%, rgba(45, 83, 160, .18), transparent 32%),
+        linear-gradient(145deg, #040711, var(--occ-bg));
+      border: 1px solid rgba(147, 176, 219, .16);
+      border-radius: var(--occ-radius);
+      overflow: hidden;
+      min-height: 720px;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      box-shadow: 0 26px 80px rgba(0, 0, 0, .34);
+    }
+
+    #orbit-command-concept * { box-sizing: border-box; }
+    #orbit-command-concept button { font: inherit; }
+    #orbit-command-concept .occ-shell { min-height: 720px; display: grid; grid-template-rows: 64px 1fr; }
+    #orbit-command-concept .occ-topbar {
+      display: flex; align-items: center; gap: 18px; padding: 0 20px;
+      border-bottom: 1px solid var(--occ-line); background: rgba(5, 9, 18, .9);
+    }
+    #orbit-command-concept .occ-brand { display: flex; align-items: center; gap: 10px; min-width: 184px; }
+    #orbit-command-concept .occ-brand-mark {
+      width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px;
+      color: #02110d; background: var(--occ-accent); box-shadow: 0 0 24px color-mix(in srgb, var(--occ-accent) 38%, transparent);
+    }
+    #orbit-command-concept .occ-brand strong { font-weight: 500; letter-spacing: .12em; }
+    #orbit-command-concept .occ-brand small { display: block; color: var(--occ-muted); font-size: 10px; letter-spacing: .08em; }
+    #orbit-command-concept .occ-project { min-width: 0; flex: 1; }
+    #orbit-command-concept .occ-project-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+    #orbit-command-concept .occ-project-meta { color: var(--occ-muted); font-size: 12px; margin-top: 2px; }
+    #orbit-command-concept .occ-actions { display: flex; align-items: center; gap: 8px; }
+    #orbit-command-concept .occ-button {
+      min-height: 36px; padding: 0 13px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      color: var(--occ-text); border: 1px solid var(--occ-line); border-radius: 10px; background: rgba(17, 27, 47, .76); cursor: pointer;
+    }
+    #orbit-command-concept .occ-button:hover { border-color: rgba(99, 245, 210, .48); }
+    #orbit-command-concept .occ-button-primary { color: #02110d; background: var(--occ-accent); border-color: transparent; font-weight: 500; }
+    #orbit-command-concept .occ-status { color: var(--occ-accent); font-size: 12px; display: flex; gap: 7px; align-items: center; }
+    #orbit-command-concept .occ-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
+
+    #orbit-command-concept .occ-body { min-height: 0; display: grid; grid-template-columns: 68px 1fr 290px; }
+    #orbit-command-concept .occ-rail { padding: 16px 11px; border-right: 1px solid var(--occ-line); display: flex; flex-direction: column; align-items: center; gap: 9px; }
+    #orbit-command-concept .occ-rail button {
+      width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 12px;
+      color: var(--occ-muted); background: transparent; cursor: pointer;
+    }
+    #orbit-command-concept .occ-rail button[aria-pressed="true"] { color: var(--occ-accent); background: rgba(99, 245, 210, .1); }
+    #orbit-command-concept .occ-rail .occ-spacer { flex: 1; }
+
+    #orbit-command-concept .occ-main { min-width: 0; display: grid; grid-template-rows: 1fr 190px; }
+    #orbit-command-concept .occ-scene { position: relative; min-height: 455px; overflow: hidden; }
+    #orbit-command-concept .occ-stars { position: absolute; inset: 0; opacity: .7; background-image: radial-gradient(circle, rgba(255,255,255,.7) 0 1px, transparent 1.4px); background-size: 83px 71px; }
+    #orbit-command-concept .occ-scene-head { position: absolute; z-index: 9; inset: 18px 18px auto 18px; display: flex; justify-content: space-between; gap: 12px; }
+    #orbit-command-concept .occ-segment { display: inline-flex; padding: 3px; gap: 3px; border-radius: 11px; background: rgba(8, 14, 26, .82); border: 1px solid var(--occ-line); }
+    #orbit-command-concept .occ-segment button { min-height: 32px; padding: 0 11px; border: 0; border-radius: 8px; color: var(--occ-muted); background: transparent; cursor: pointer; }
+    #orbit-command-concept .occ-segment button[aria-pressed="true"] { color: var(--occ-text); background: var(--occ-panel-2); }
+    #orbit-command-concept .occ-live { display: flex; align-items: center; gap: 8px; color: var(--occ-muted); font-size: 12px; }
+
+    #orbit-command-concept .occ-space { position: absolute; inset: 42px 0 0; display: grid; place-items: center; perspective: 850px; }
+    #orbit-command-concept .occ-system { position: relative; width: min(55vw, 500px); aspect-ratio: 1; transform: rotateX(7deg); }
+    #orbit-command-concept .occ-globe {
+      position: absolute; width: 51%; aspect-ratio: 1; left: 24.5%; top: 24.5%; border-radius: 50%; overflow: hidden;
+      background:
+        radial-gradient(circle at 33% 28%, rgba(164, 237, 255, .85), transparent 4%),
+        radial-gradient(ellipse at 59% 44%, #5d9d88 0 10%, transparent 11%),
+        radial-gradient(ellipse at 42% 61%, #437c69 0 14%, transparent 15%),
+        radial-gradient(circle at 37% 33%, #2b6f9d, #123c68 48%, #071d38 72%);
+      box-shadow: inset -34px -18px 44px rgba(0,0,0,.72), inset 10px 5px 24px rgba(135,224,255,.18), 0 0 55px rgba(55,132,216,.28);
+    }
+    #orbit-command-concept .occ-globe::after { content: ""; position: absolute; inset: -20%; border-radius: 48%; opacity: .2; background: repeating-linear-gradient(90deg, transparent 0 19px, rgba(180,230,255,.18) 20px); animation: occ-earth 20s linear infinite; }
+    #orbit-command-concept .occ-atmosphere { position: absolute; width: 53%; aspect-ratio: 1; left: 23.5%; top: 23.5%; border-radius: 50%; border: 1px solid rgba(118,219,255,.5); box-shadow: 0 0 18px rgba(55,160,255,.45); }
+    #orbit-command-concept .occ-orbit { position: absolute; inset: 7%; border: 1px solid rgba(121,165,235,.32); border-radius: 50%; transform: rotateX(69deg) rotateZ(var(--orbit-z)); }
+    #orbit-command-concept .occ-orbit::before { content: ""; position: absolute; inset: 15%; border: 1px solid rgba(121,165,235,.12); border-radius: 50%; }
+    #orbit-command-concept .occ-satellite { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%; background: var(--occ-accent); box-shadow: 0 0 8px var(--occ-accent); transform: rotate(var(--angle)) translateX(44vw); transform-origin: 0 0; }
+    #orbit-command-concept .occ-sat-dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: var(--occ-accent); box-shadow: 0 0 10px var(--occ-accent); }
+    #orbit-command-concept .occ-sat-dot.is-muted { background: var(--occ-muted); box-shadow: none; opacity: .42; }
+    #orbit-command-concept .occ-sat-dot.is-alert { background: var(--occ-danger); box-shadow: 0 0 11px var(--occ-danger); }
+    #orbit-command-concept .occ-ground { position: absolute; width: 10px; height: 10px; border: 2px solid var(--occ-accent); border-radius: 50%; box-shadow: 0 0 0 5px rgba(99,245,210,.12), 0 0 12px var(--occ-accent); }
+    #orbit-command-concept .occ-ground::after { content: attr(data-label); position: absolute; left: 13px; top: -4px; color: var(--occ-text); font-size: 10px; white-space: nowrap; text-shadow: 0 1px 5px #000; }
+    #orbit-command-concept .occ-route-line { position: absolute; height: 1px; transform-origin: left center; background: linear-gradient(90deg, var(--occ-accent), var(--occ-accent-2)); box-shadow: 0 0 8px var(--occ-accent); opacity: .78; }
+    #orbit-command-concept .occ-route-label { position: absolute; left: 18px; bottom: 18px; padding: 9px 11px; border-radius: 10px; color: var(--occ-muted); background: rgba(6, 12, 24, .78); border: 1px solid var(--occ-line); font-size: 12px; }
+    #orbit-command-concept .occ-route-label strong { color: var(--occ-text); font-weight: 500; }
+
+    #orbit-command-concept .occ-timeline { border-top: 1px solid var(--occ-line); padding: 15px 18px 16px; background: rgba(7, 12, 23, .88); }
+    #orbit-command-concept .occ-time-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px; }
+    #orbit-command-concept .occ-time-title { display: flex; align-items: center; gap: 10px; }
+    #orbit-command-concept .occ-time-title strong { font-weight: 500; }
+    #orbit-command-concept .occ-time-title span { color: var(--occ-accent); font-variant-numeric: tabular-nums; }
+    #orbit-command-concept .occ-play { width: 34px; height: 34px; padding: 0; }
+    #orbit-command-concept .occ-axis { display: flex; justify-content: space-between; color: var(--occ-muted); font-size: 10px; padding-left: 62px; }
+    #orbit-command-concept .occ-lane { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 10px; margin-top: 8px; }
+    #orbit-command-concept .occ-lane-name { color: var(--occ-muted); font-size: 11px; }
+    #orbit-command-concept .occ-track { height: 13px; position: relative; border-radius: 3px; overflow: hidden; background: rgba(137,160,189,.12); }
+    #orbit-command-concept .occ-up { position: absolute; inset-block: 0; background: rgba(99,245,210,.7); }
+    #orbit-command-concept .occ-down { position: absolute; inset-block: 0; background: var(--occ-danger); }
+    #orbit-command-concept .occ-cursor { position: absolute; left: 25%; top: 0; bottom: 0; width: 2px; background: var(--occ-text); box-shadow: 0 0 7px rgba(255,255,255,.7); }
+
+    #orbit-command-concept .occ-inspector { min-width: 0; padding: 17px; border-left: 1px solid var(--occ-line); background: rgba(8, 13, 24, .94); }
+    #orbit-command-concept .occ-eyebrow { color: var(--occ-muted); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+    #orbit-command-concept .occ-inspector h2 { margin: 7px 0 4px; font-size: 19px; font-weight: 500; }
+    #orbit-command-concept .occ-subtle { color: var(--occ-muted); font-size: 12px; }
+    #orbit-command-concept .occ-score { margin: 20px 0 17px; }
+    #orbit-command-concept .occ-score-row { display: flex; justify-content: space-between; align-items: baseline; }
+    #orbit-command-concept .occ-score-value { font-size: 31px; font-weight: 500; letter-spacing: -.04em; }
+    #orbit-command-concept .occ-score-target { color: var(--occ-accent); font-size: 11px; }
+    #orbit-command-concept .occ-meter { height: 5px; margin-top: 10px; border-radius: 4px; background: rgba(137,160,189,.13); overflow: hidden; }
+    #orbit-command-concept .occ-meter > span { display: block; width: 98.75%; height: 100%; background: linear-gradient(90deg, var(--occ-accent-2), var(--occ-accent)); }
+    #orbit-command-concept .occ-section { padding: 15px 0; border-top: 1px solid var(--occ-line); }
+    #orbit-command-concept .occ-section-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 12px; }
+    #orbit-command-concept .occ-good { color: var(--occ-accent); }
+    #orbit-command-concept .occ-route { display: flex; flex-direction: column; gap: 0; }
+    #orbit-command-concept .occ-node { position: relative; display: flex; gap: 11px; align-items: center; min-height: 39px; font-size: 12px; }
+    #orbit-command-concept .occ-node:not(:last-child)::after { content: ""; position: absolute; left: 5px; top: 25px; height: 22px; width: 1px; background: linear-gradient(var(--occ-accent), var(--occ-accent-2)); }
+    #orbit-command-concept .occ-node-dot { width: 11px; height: 11px; flex: 0 0 auto; border-radius: 50%; background: var(--occ-panel); border: 2px solid var(--occ-accent); }
+    #orbit-command-concept .occ-node:nth-child(3) .occ-node-dot { border-color: var(--occ-accent-2); }
+    #orbit-command-concept .occ-node small { margin-left: auto; color: var(--occ-muted); }
+    #orbit-command-concept .occ-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    #orbit-command-concept .occ-fact span { display: block; color: var(--occ-muted); font-size: 10px; margin-bottom: 4px; }
+    #orbit-command-concept .occ-fact strong { font-weight: 500; font-variant-numeric: tabular-nums; }
+    #orbit-command-concept .occ-client-tabs { display: flex; gap: 6px; margin-top: 14px; }
+    #orbit-command-concept .occ-client-tabs button { flex: 1; min-height: 32px; border-radius: 8px; border: 1px solid var(--occ-line); color: var(--occ-muted); background: transparent; cursor: pointer; }
+    #orbit-command-concept .occ-client-tabs button[aria-pressed="true"] { color: var(--occ-text); border-color: rgba(99,245,210,.48); background: rgba(99,245,210,.08); }
+
+    @keyframes occ-earth { to { transform: translateX(20px) rotate(360deg); } }
+    #orbit-command-concept.is-paused .occ-globe::after { animation-play-state: paused; }
+    @media (prefers-reduced-motion: reduce) { #orbit-command-concept .occ-globe::after { animation: none; } }
+    @media (max-width: 820px) {
+      #orbit-command-concept .occ-body { grid-template-columns: 58px 1fr; }
+      #orbit-command-concept .occ-inspector { grid-column: 2; border-left: 0; border-top: 1px solid var(--occ-line); }
+      #orbit-command-concept .occ-actions .occ-secondary-action, #orbit-command-concept .occ-status { display: none; }
+      #orbit-command-concept .occ-system { width: min(74vw, 480px); }
+    }
+    @media (max-width: 520px) {
+      #orbit-command-concept .occ-shell { grid-template-rows: auto 1fr; }
+      #orbit-command-concept .occ-topbar { min-height: 64px; padding: 10px 12px; }
+      #orbit-command-concept .occ-brand { min-width: auto; }
+      #orbit-command-concept .occ-brand div, #orbit-command-concept .occ-project-meta { display: none; }
+      #orbit-command-concept .occ-actions .occ-button:not(.occ-button-primary) { display: none; }
+      #orbit-command-concept .occ-body { grid-template-columns: 1fr; }
+      #orbit-command-concept .occ-rail { display: none; }
+      #orbit-command-concept .occ-inspector { grid-column: 1; }
+      #orbit-command-concept .occ-scene-head { flex-direction: column; align-items: flex-start; }
+      #orbit-command-concept .occ-system { width: 94vw; }
+    }
+  </style>
+
+  <div class="occ-shell">
+    <header class="occ-topbar">
+      <div class="occ-brand">
+        <div class="occ-brand-mark"><i data-lucide="orbit" aria-hidden="true"></i></div>
+        <div><strong>POLARIS</strong><small>CONSTELLATION LAB</small></div>
+      </div>
+      <div class="occ-project">
+        <div class="occ-project-title">Полная группировка / Вариант A</div>
+        <div class="occ-project-meta">48 аппаратов · 3 плоскости · расчёт на 24 часа</div>
+      </div>
+      <span class="occ-status">Расчёт актуален</span>
+      <div class="occ-actions">
+        <button class="occ-button occ-secondary-action" type="button"><i data-lucide="git-compare" aria-hidden="true"></i>Сравнить</button>
+        <button class="occ-button occ-secondary-action" type="button"><i data-lucide="download" aria-hidden="true"></i>Экспорт</button>
+        <button class="occ-button occ-button-primary" type="button"><i data-lucide="play" aria-hidden="true"></i>Запустить</button>
+      </div>
+    </header>
+
+    <div class="occ-body">
+      <nav class="occ-rail" aria-label="Разделы приложения">
+        <button type="button" aria-label="Обзор" aria-pressed="true"><i data-lucide="globe-2" aria-hidden="true"></i></button>
+        <button type="button" aria-label="Конфигурация" aria-pressed="false"><i data-lucide="sliders-horizontal" aria-hidden="true"></i></button>
+        <button type="button" aria-label="Отказы" aria-pressed="false"><i data-lucide="triangle-alert" aria-hidden="true"></i></button>
+        <button type="button" aria-label="Аналитика" aria-pressed="false"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i></button>
+        <button type="button" aria-label="Варианты" aria-pressed="false"><i data-lucide="layers-3" aria-hidden="true"></i></button>
+        <span class="occ-spacer"></span>
+        <button type="button" aria-label="Настройки" aria-pressed="false"><i data-lucide="settings" aria-hidden="true"></i></button>
+      </nav>
+
+      <main class="occ-main">
+        <section class="occ-scene" aria-label="Трёхмерная схема спутниковой сети">
+          <div class="occ-stars"></div>
+          <div class="occ-scene-head">
+            <div class="occ-segment" aria-label="Этап развёртывания">
+              <button type="button" data-stage="1" aria-pressed="false">Этап 1</button>
+              <button type="button" data-stage="2" aria-pressed="false">Этап 2</button>
+              <button type="button" data-stage="3" aria-pressed="true">Этап 3</button>
+            </div>
+            <div class="occ-live"><i data-lucide="satellite" aria-hidden="true"></i><span id="occ-active-count">48 активны</span> · 06:00 UTC</div>
+          </div>
+          <div class="occ-space">
+            <div class="occ-system">
+              <div class="occ-orbit" style="--orbit-z: 0deg"></div>
+              <div class="occ-orbit" style="--orbit-z: 60deg"></div>
+              <div class="occ-orbit" style="--orbit-z: 120deg"></div>
+              <div class="occ-atmosphere"></div>
+              <div class="occ-globe"></div>
+              <span class="occ-ground" data-label="C65" style="left:38%;top:39%"></span>
+              <span class="occ-ground" data-label="C70" style="left:48%;top:31%"></span>
+              <span class="occ-ground" data-label="G_MUR" style="left:57%;top:42%"></span>
+              <span class="occ-sat-dot" style="left:22%;top:35%"></span>
+              <span class="occ-sat-dot" style="left:31%;top:17%"></span>
+              <span class="occ-sat-dot" style="left:47%;top:8%"></span>
+              <span class="occ-sat-dot" style="left:71%;top:19%"></span>
+              <span class="occ-sat-dot" style="left:82%;top:47%"></span>
+              <span class="occ-sat-dot" style="left:67%;top:77%"></span>
+              <span class="occ-sat-dot" style="left:42%;top:89%"></span>
+              <span class="occ-sat-dot is-muted" style="left:16%;top:69%"></span>
+              <span class="occ-sat-dot is-alert" style="left:27%;top:79%"></span>
+              <span class="occ-route-line" style="left:40%;top:38%;width:22%;transform:rotate(-38deg)"></span>
+              <span class="occ-route-line" style="left:57%;top:24%;width:25%;transform:rotate(35deg)"></span>
+              <span class="occ-route-line" style="left:76%;top:39%;width:23%;transform:rotate(137deg)"></span>
+            </div>
+          </div>
+          <div class="occ-route-label"><strong>C70 → G_MUR</strong> · маршрут активен · 3 перехода</div>
+        </section>
+
+        <section class="occ-timeline" aria-label="Доступность связи во времени">
+          <div class="occ-time-head">
+            <div class="occ-time-title"><button id="occ-play" class="occ-button occ-play" type="button" aria-label="Приостановить"><i data-lucide="pause" aria-hidden="true"></i></button><strong>Состояние сети</strong><span>06:00:00</span></div>
+            <span class="occ-subtle">Шаг 120 секунд</span>
+          </div>
+          <div class="occ-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+          <div class="occ-lane"><span class="occ-lane-name">C65</span><div class="occ-track"><span class="occ-up" style="left:0;width:39%"></span><span class="occ-down" style="left:39%;width:3%"></span><span class="occ-up" style="left:42%;width:58%"></span><span class="occ-cursor"></span></div></div>
+          <div class="occ-lane"><span class="occ-lane-name">C70</span><div class="occ-track"><span class="occ-up" style="left:0;width:67%"></span><span class="occ-down" style="left:67%;width:1.5%"></span><span class="occ-up" style="left:68.5%;width:31.5%"></span><span class="occ-cursor"></span></div></div>
+          <div class="occ-lane"><span class="occ-lane-name">C72</span><div class="occ-track"><span class="occ-up" style="left:0;width:83%"></span><span class="occ-down" style="left:83%;width:1.5%"></span><span class="occ-up" style="left:84.5%;width:15.5%"></span><span class="occ-cursor"></span></div></div>
+        </section>
+      </main>
+
+      <aside class="occ-inspector" aria-label="Детали выбранного маршрута">
+        <div class="occ-eyebrow">Выбранный терминал</div>
+        <h2 id="occ-client-title">Northern terminal 70</h2>
+        <div class="occ-subtle">70.0° N · 90.0° E</div>
+        <div class="occ-client-tabs" aria-label="Выбор терминала">
+          <button type="button" data-client="C65" aria-pressed="false">C65</button>
+          <button type="button" data-client="C70" aria-pressed="true">C70</button>
+          <button type="button" data-client="C72" aria-pressed="false">C72</button>
+        </div>
+
+        <div class="occ-score">
+          <div class="occ-score-row"><span class="occ-score-value" id="occ-availability">98,75%</span><span class="occ-score-target">цель ≥ 90%</span></div>
+          <div class="occ-subtle">Доступность маршрута за сутки</div>
+          <div class="occ-meter"><span id="occ-meter-fill"></span></div>
+        </div>
+
+        <section class="occ-section">
+          <div class="occ-section-title"><span>Текущий маршрут</span><span class="occ-good">Доступен</span></div>
+          <div class="occ-route">
+            <div class="occ-node"><span class="occ-node-dot"></span><span id="occ-route-client">C70</span><small>терминал</small></div>
+            <div class="occ-node"><span class="occ-node-dot"></span><span>S23</span><small>682 км</small></div>
+            <div class="occ-node"><span class="occ-node-dot"></span><span>S08</span><small>2 214 км</small></div>
+            <div class="occ-node"><span class="occ-node-dot"></span><span>G_MUR</span><small>шлюз</small></div>
+          </div>
+        </section>
+
+        <section class="occ-section">
+          <div class="occ-section-title"><span>Показатели</span><span class="occ-subtle">24 часа</span></div>
+          <div class="occ-facts">
+            <div class="occ-fact"><span>Видимость</span><strong id="occ-visibility">99,86%</strong></div>
+            <div class="occ-fact"><span>Макс. перерыв</span><strong id="occ-outage">2 мин</strong></div>
+            <div class="occ-fact"><span>Переходы</span><strong>3</strong></div>
+            <div class="occ-fact"><span>Высота орбиты</span><strong>550 км</strong></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const root = document.getElementById('orbit-command-concept');
+      const stageData = { 1: 16, 2: 32, 3: 48 };
+      const clientData = {
+        C65: { title: 'Northern terminal 65', availability: '96,67%', raw: 96.67, visibility: '97,78%', outage: '8 мин' },
+        C70: { title: 'Northern terminal 70', availability: '98,75%', raw: 98.75, visibility: '99,86%', outage: '2 мин' },
+        C72: { title: 'Northern terminal 72', availability: '98,89%', raw: 98.89, visibility: '100,00%', outage: '2 мин' }
+      };
+      let playing = true;
+
+      root.querySelectorAll('[data-stage]').forEach(button => button.addEventListener('click', () => {
+        root.querySelectorAll('[data-stage]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+        document.getElementById('occ-active-count').textContent = `${stageData[button.dataset.stage]} активны`;
+      }));
+
+      root.querySelectorAll('[data-client]').forEach(button => button.addEventListener('click', () => {
+        const data = clientData[button.dataset.client];
+        root.querySelectorAll('[data-client]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+        document.getElementById('occ-client-title').textContent = data.title;
+        document.getElementById('occ-availability').textContent = data.availability;
+        document.getElementById('occ-visibility').textContent = data.visibility;
+        document.getElementById('occ-outage').textContent = data.outage;
+        document.getElementById('occ-route-client').textContent = button.dataset.client;
+        document.getElementById('occ-meter-fill').style.width = `${data.raw}%`;
+      }));
+
+      document.getElementById('occ-play').addEventListener('click', event => {
+        playing = !playing;
+        root.classList.toggle('is-paused', !playing);
+        event.currentTarget.setAttribute('aria-label', playing ? 'Приостановить' : 'Продолжить');
+        event.currentTarget.innerHTML = `<i data-lucide="${playing ? 'pause' : 'play'}" aria-hidden="true"></i>`;
+        if (globalThis.lucide) lucide.createIcons({ attrs: { width: 16, height: 16 } });
+      });
+
+      const design = { accent: '#63f5d2', radius: 16, glow: true };
+      function applyDesign() {
+        root.style.setProperty('--occ-accent', design.accent);
+        root.style.setProperty('--occ-radius', `${design.radius}px`);
+        root.style.filter = design.glow ? 'none' : 'saturate(.78)';
+      }
+      applyDesign();
+      if (globalThis.Tweak) {
+        const tweak = new Tweak({ container: root, onChange: applyDesign });
+        tweak.addColorPicker(design, 'accent', { label: 'Цвет телеметрии', reference: '--occ-accent' });
+        tweak.addSlider(design, 'radius', { label: 'Скругление интерфейса', min: 4, max: 24, unit: 'px', reference: '--occ-radius' });
+        tweak.addToggle(design, 'glow', { label: 'Свечение', reference: 'design.glow' });
+      }
+    })();
+  </script>
+</div>
