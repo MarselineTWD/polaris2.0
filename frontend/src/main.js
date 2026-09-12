@@ -702,8 +702,11 @@ function bindControls() {
 
   document.addEventListener("keydown", (event) => {
     const target = event.target;
+    const textInput =
+      target instanceof HTMLInputElement &&
+      !["range", "checkbox", "radio", "button", "submit"].includes(target.type);
     const editing =
-      target instanceof HTMLInputElement ||
+      textInput ||
       target instanceof HTMLSelectElement ||
       target instanceof HTMLTextAreaElement ||
       target?.isContentEditable;
@@ -719,7 +722,8 @@ function bindControls() {
       setTime(state.timeSeconds + direction * (state.bundle?.stepSeconds || 0));
     } else if (["1", "2", "3"].includes(event.key) && !event.repeat) {
       document.querySelector(`[data-stage="${event.key}"]`)?.click();
-    } else if (event.key.toLowerCase() === "n" && !event.repeat) {
+    } else if (event.code === "KeyN" && !event.repeat) {
+      event.preventDefault();
       nextGap();
     }
   });
