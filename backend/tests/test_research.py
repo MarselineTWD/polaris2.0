@@ -110,3 +110,21 @@ def test_hazard_becomes_outage_only_after_explicit_command(tmp_path, full_raw) -
         "satellite_id": "S01", "start_s": 100, "end_s": 700,
     }
 
+
+def test_refined_boundaries_drive_duration_metrics() -> None:
+    outcome: dict = {}
+    states = np.asarray([True, False, False, True], dtype=bool)
+    causes = ["none", "weather", "weather", "none"]
+    research_engine._apply_refined_timing(
+        outcome,
+        states,
+        causes,
+        np.asarray([0.0, 60.0, 120.0, 180.0]),
+        240,
+        {1: 43, 3: 177},
+    )
+    assert outcome["gaps"][0]["start_s"] == 43
+    assert outcome["gaps"][0]["end_s"] == 177
+    assert outcome["gaps"][0]["boundary_resolution_s"] == 1
+    assert outcome["cause_totals_s"] == {"weather": 134}
+    assert outcome["availability_pct"] == 44.17

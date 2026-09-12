@@ -213,6 +213,7 @@ def _geometry(
             "elevation_m": np.array(height),
         }
     return {
+        "orbit": orbit,
         "pairs": pairs,
         "isl": isl,
         "isl_distance": isl_distance,
@@ -233,11 +234,81 @@ def _run_profile(
     profile: dict[str, Any],
     options: ResearchOptions,
 ) -> dict[str, Any]:
+    ground_budgets, isl_budget, rf, optical = _build_profile_budgets(
+        scenario, epoch, times, gateway_online, geometry, weather, profile, options
+    )
+
+    clients: list[dict[str, Any]] = []
+    traces: dict[str, dict[str, Any]] = {}
+    representative: dict[str, Any] | None = None
+    for client in scenario.clients:
+        outcome, candidate_passport, trace = _route_client(
+            scenario,
+            client,
+            times,
+            active,
+            geometry,
+            ground_budgets,
+            isl_budget,
+            rf,
+            optical,
+            options,
+        )
+        clients.append(outcome)
+        traces[client.id] = trace
+        if candidate_passport and (
+            representative is None
+            or candidate_passport["margin_db"] < representative["margin_db"]
+        ):
+            representative = candidate_passport
+
+    _refine_profile_timing(
+        scenario=scenario,
+        epoch=epoch,
+        times=times,
+        orbit=geometry["orbit"],
+        weather=weather,
+        profile=profile,
+        options=options,
+        clients=clients,
+        traces=traces,
+    )
+
+    availabilities = [client["availability_pct"] for client in clients]
+    causes: Counter[str] = Counter()
+    for client in clients:
+        causes.update(client["cause_totals_s"])
+    return {
+        "id": profile["id"],
+        "label": profile["label"],
+        "description": profile["description"],
+        "tone": profile["tone"],
+        "assumption": True,
+        "availability": {
+            "min_pct": round(min(availabilities), 2) if availabilities else 0.0,
+            "mean_pct": round(sum(availabilities) / len(availabilities), 2) if availabilities else 0.0,
+            "max_pct": round(max(availabilities), 2) if availabilities else 0.0,
+        },
+        "clients": clients,
+        "cause_totals_s": dict(causes),
+        "line_passport": representative,
+        "equipment": profile,
+    }
+
+
+def _build_profile_budgets(
+    scenario: Scenario,
+    epoch: datetime,
+    times: np.ndarray,
+    gateway_online: dict[str, np.ndarray],
+    geometry: dict[str, Any],
+    weather: dict[str, Any],
+    profile: dict[str, Any],
+    options: ResearchOptions,
+) -> tuple[dict[str, BudgetMatrix], BudgetMatrix, BudgetMatrix, BudgetMatrix]:
     ground_budgets: dict[str, BudgetMatrix] = {}
-    weather_by_site: dict[str, dict[str, np.ndarray]] = {}
     for site in scenario.ground_sites:
         conditions = weather_series(weather, site.id, epoch, times)
-        weather_by_site[site.id] = conditions
         equipment = profile["client" if site.is_client else "gateway"]
         geo = geometry["ground"][site.id]
         visible = geo["visible"].copy()
@@ -270,49 +341,228 @@ def _run_profile(
         isl_budget = _hybrid(rf, optical)
         terminal_count = int(profile["rf_isl"]["terminals"]) + int(profile["optical_isl"]["terminals"])
     apply_terminal_capacity(isl_budget, geometry["pairs"], len(scenario.satellites), terminal_count)
+    return ground_budgets, isl_budget, rf, optical
 
-    clients: list[dict[str, Any]] = []
-    representative: dict[str, Any] | None = None
-    for client in scenario.clients:
-        outcome, candidate_passport = _route_client(
-            scenario,
-            client,
-            times,
-            active,
-            geometry,
-            ground_budgets,
-            isl_budget,
-            rf,
-            optical,
-            options,
-        )
-        clients.append(outcome)
-        if candidate_passport and (
-            representative is None
-            or candidate_passport["margin_db"] < representative["margin_db"]
-        ):
-            representative = candidate_passport
 
-    availabilities = [client["availability_pct"] for client in clients]
-    causes: Counter[str] = Counter()
+def _refine_profile_timing(
+    *,
+    scenario: Scenario,
+    epoch: datetime,
+    times: np.ndarray,
+    orbit: OrbitResult,
+    weather: dict[str, Any],
+    profile: dict[str, Any],
+    options: ResearchOptions,
+    clients: list[dict[str, Any]],
+    traces: dict[str, dict[str, Any]],
+) -> None:
+    """Пересчитать только окна смены состояния на сетке в одну секунду.
+
+    Полный суточный граф на секундной сетке занял бы гигабайты памяти. Вместо
+    этого сначала ищутся переходы на основной сетке, затем для каждого такого
+    интервала строится отдельное физическое состояние сети. Положение и
+    скорость между узлами SatKit восстанавливаются кубической интерполяцией
+    Эрмита, после чего заново применяются геометрия, link budget, ограничения
+    терминалов и маршрутизация.
+    """
+    transitions: list[dict[str, Any]] = []
+    for client_id, trace in traces.items():
+        states = trace["states"]
+        for left in np.flatnonzero(states[1:] != states[:-1]):
+            left = int(left)
+            transitions.append({
+                "client_id": client_id,
+                "left": left,
+                "boundary_index": left + 1,
+                "previous": bool(states[left]),
+                "low": round(float(times[left])),
+                "high": round(float(times[left + 1])),
+            })
+
+    boundaries: dict[str, dict[int, int]] = {client["id"]: {} for client in clients}
+    clients_by_id = {client.id: client for client in scenario.clients}
+    while any(item["high"] - item["low"] > 1 for item in transitions):
+        queries: dict[tuple[int, int], list[dict[str, Any]]] = {}
+        for item in transitions:
+            if item["high"] - item["low"] <= 1:
+                continue
+            middle = (item["low"] + item["high"]) // 2
+            queries.setdefault((item["left"], middle), []).append(item)
+
+        # Векторизация сильно дешевле тысяч одноточечных budget-расчётов, но
+        # чанк удерживает пиковую память матриц межспутниковых линий ниже ~200 МБ.
+        ordered = sorted(queries, key=lambda item: item[1])
+        for chunk_start in range(0, len(ordered), 192):
+            chunk = ordered[chunk_start:chunk_start + 192]
+            left_indices = np.asarray([item[0] for item in chunk], dtype=np.int64)
+            fine_times = np.asarray([item[1] for item in chunk], dtype=np.float64)
+            fine_orbit = _interpolate_orbit_points(orbit, left_indices, fine_times)
+            fine_active = active_mask(scenario, fine_times)
+            fine_gateway_online = gateway_online_mask(scenario, fine_times)
+            fine_geometry = _geometry(scenario, fine_orbit, fine_active, {})
+            fine_ground, fine_isl, _, _ = _build_profile_budgets(
+                scenario,
+                epoch,
+                fine_times,
+                fine_gateway_online,
+                fine_geometry,
+                weather,
+                profile,
+                options,
+            )
+            needed_clients = {
+                entry["client_id"] for key in chunk for entry in queries[key]
+            }
+            flags = {
+                client_id: _route_flags(
+                    scenario,
+                    clients_by_id[client_id],
+                    fine_geometry,
+                    fine_ground,
+                    fine_isl,
+                    options,
+                )[0]
+                for client_id in needed_clients
+            }
+            for local_index, key in enumerate(chunk):
+                for item in queries[key]:
+                    if bool(flags[item["client_id"]][local_index]) == item["previous"]:
+                        item["low"] = key[1]
+                    else:
+                        item["high"] = key[1]
+
+    for item in transitions:
+        boundaries[item["client_id"]][item["boundary_index"]] = item["high"]
+
     for client in clients:
-        causes.update(client["cause_totals_s"])
-    return {
-        "id": profile["id"],
-        "label": profile["label"],
-        "description": profile["description"],
-        "tone": profile["tone"],
-        "assumption": True,
-        "availability": {
-            "min_pct": round(min(availabilities), 2) if availabilities else 0.0,
-            "mean_pct": round(sum(availabilities) / len(availabilities), 2) if availabilities else 0.0,
-            "max_pct": round(max(availabilities), 2) if availabilities else 0.0,
-        },
-        "clients": clients,
-        "cause_totals_s": dict(causes),
-        "line_passport": representative,
-        "equipment": profile,
+        trace = traces[client["id"]]
+        _apply_refined_timing(
+            client,
+            trace["states"],
+            trace["causes"],
+            times,
+            scenario.environment.horizon_s,
+            boundaries[client["id"]],
+        )
+
+
+def _interpolate_orbit_points(
+    orbit: OrbitResult, left: np.ndarray, fine_times: np.ndarray
+) -> OrbitResult:
+    """Кубически восстановить набор состояний орбиты в целые секунды."""
+    t0, t1 = orbit.times[left], orbit.times[left + 1]
+    duration = np.maximum(t1 - t0, 1e-9)
+    u = ((fine_times - t0) / duration)[:, None, None]
+    u2, u3 = u * u, u * u * u
+    p0, p1 = orbit.fixed_km[left], orbit.fixed_km[left + 1]
+    v0, v1 = orbit.velocity_fixed_km_s[left], orbit.velocity_fixed_km_s[left + 1]
+    duration = duration[:, None, None]
+    fixed = (
+        (2 * u3 - 3 * u2 + 1) * p0
+        + (u3 - 2 * u2 + u) * duration * v0
+        + (-2 * u3 + 3 * u2) * p1
+        + (u3 - u2) * duration * v1
+    )
+    velocity_fixed = (
+        (6 * u2 - 6 * u) / duration * p0
+        + (3 * u2 - 4 * u + 1) * v0
+        + (-6 * u2 + 6 * u) / duration * p1
+        + (3 * u2 - 2 * u) * v1
+    )
+    interpolated = OrbitResult(
+        times=fine_times,
+        inertial_km=fixed,
+        fixed_km=fixed,
+        velocity_inertial_km_s=velocity_fixed,
+        velocity_fixed_km_s=velocity_fixed,
+        metadata=orbit.metadata,
+    )
+    return interpolated
+
+
+def _route_flags(
+    scenario: Scenario,
+    client: GroundSite,
+    geometry: dict[str, Any],
+    ground: dict[str, BudgetMatrix],
+    isl: BudgetMatrix,
+    options: ResearchOptions,
+) -> tuple[np.ndarray, list[str]]:
+    """Маршрут/причина для небольшой уточняющей сетки."""
+    states = np.zeros(isl.available.shape[0], dtype=bool)
+    causes = ["none"] * states.size
+    client_budget = ground[client.id]
+    for step in range(states.size):
+        graph = _step_graph(scenario, step, geometry, ground, isl)
+        available = np.flatnonzero(client_budget.available[step])
+        sources = SourceLinks(
+            satellites=[int(sat) for sat in available],
+            distance=[float(client_budget.distance_km[step, sat]) for sat in available],
+            margin=[float(client_budget.margin_db[step, sat]) for sat in available],
+        )
+        if find_path(graph, sources, options.strategy) is not None:
+            states[step] = True
+        else:
+            causes[step] = _diagnose_engineering(
+                scenario, step, client_budget, ground, isl
+            )
+    return states, causes
+
+
+def _apply_refined_timing(
+    outcome: dict[str, Any],
+    states: np.ndarray,
+    causes: list[str],
+    times: np.ndarray,
+    horizon_s: int,
+    refined: dict[int, int],
+) -> None:
+    labels = np.asarray(
+        ["routed" if ok else cause for ok, cause in zip(states, causes)], dtype=object
+    )
+    label_changes = np.flatnonzero(labels[1:] != labels[:-1]) + 1
+    boundaries = {
+        int(index): refined.get(
+            int(index), round((float(times[index - 1]) + float(times[index])) / 2.0)
+        )
+        for index in label_changes
     }
+    timeline = _segments(states, causes, times, horizon_s, boundaries)
+    gaps = _gaps(states, causes, times, horizon_s, boundaries)
+    cause_totals: Counter[str] = Counter()
+    for segment in timeline:
+        if segment["state"] != "routed":
+            cause_totals[segment["state"]] += segment["end_s"] - segment["start_s"]
+    for gap in gaps:
+        breakdown: Counter[str] = Counter()
+        for segment in timeline:
+            if segment["state"] == "routed":
+                continue
+            overlap = max(
+                0,
+                min(gap["end_s"], segment["end_s"])
+                - max(gap["start_s"], segment["start_s"]),
+            )
+            if overlap:
+                breakdown[segment["state"]] += overlap
+        if breakdown:
+            cause = breakdown.most_common(1)[0][0]
+            gap["cause"] = cause
+            gap["cause_label"] = CAUSE_LABEL.get(cause, cause)
+            gap["cause_breakdown_s"] = dict(breakdown)
+
+    routed_s = sum(
+        segment["end_s"] - segment["start_s"]
+        for segment in timeline
+        if segment["state"] == "routed"
+    )
+    outcome.update({
+        "availability_pct": round(routed_s / max(horizon_s, 1) * 100.0, 2),
+        "max_gap_s": max((gap["duration_s"] for gap in gaps), default=0),
+        "gaps": gaps,
+        "cause_totals_s": dict(cause_totals),
+        "timeline": timeline,
+    })
 
 
 def _route_client(
@@ -326,7 +576,7 @@ def _route_client(
     rf_budget: BudgetMatrix,
     optical_budget: BudgetMatrix,
     options: ResearchOptions,
-) -> tuple[dict[str, Any], dict[str, Any] | None]:
+) -> tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any]]:
     n_sat = len(scenario.satellites)
     pair_i, pair_j = geometry["pairs"]
     pair_lookup = {(int(a), int(b)): index for index, (a, b) in enumerate(zip(pair_i, pair_j))}
@@ -370,29 +620,24 @@ def _route_client(
         if candidate and (representative is None or candidate["margin_db"] < representative["margin_db"]):
             representative = {**candidate, "t_s": round(float(times[step])), "client_id": client.id}
 
-    gaps = _gaps(states, causes, times, float(np.median(np.diff(times))) if times.size > 1 else 1.0)
-    cause_totals: Counter[str] = Counter()
-    step_s = float(np.median(np.diff(times))) if times.size > 1 else 1.0
-    for cause in np.asarray(causes, dtype=object)[~states]:
-        cause_totals[str(cause)] += step_s
     routed = int(states.sum())
-    timeline = _segments(states, causes, times, step_s)
-    return {
+    outcome = {
         "id": client.id,
         "name": client.name,
-        "availability_pct": round(routed / max(states.size, 1) * 100.0, 2),
+        "availability_pct": 0.0,
         "routed_steps": routed,
         "step_count": int(states.size),
         "mean_margin_db": round(float(np.nanmean(margins)), 2) if states.any() else None,
         "mean_latency_ms": round(float(np.nanmean(latencies)), 2) if states.any() else None,
         "mean_hops": round(float(np.nanmean(hops)), 2) if states.any() else None,
-        "max_gap_s": max((gap["duration_s"] for gap in gaps), default=0),
-        "gaps": gaps,
-        "cause_totals_s": dict(cause_totals),
-        "timeline": timeline,
+        "max_gap_s": 0,
+        "gaps": [],
+        "cause_totals_s": {},
+        "timeline": [],
         # Для экспорта сохраняются только изменения маршрута, а не тысячи дублей.
         "route_changes": _route_changes(routes, times),
-    }, representative
+    }
+    return outcome, representative, {"states": states, "causes": causes}
 
 
 def _step_graph(
@@ -532,15 +777,20 @@ def _limit_ground_terminals(budget: BudgetMatrix, terminals: int) -> None:
         budget.cause[step, dropped] = 6
 
 
-def _gaps(states: np.ndarray, causes: list[str], times: np.ndarray, step_s: float) -> list[dict[str, Any]]:
+def _gaps(
+    states: np.ndarray,
+    causes: list[str],
+    times: np.ndarray,
+    horizon_s: int,
+    boundaries: dict[int, int],
+) -> list[dict[str, Any]]:
     missing = ~states
     padded = np.concatenate(([False], missing, [False]))
     edges = np.flatnonzero(padded[1:] != padded[:-1])
     gaps: list[dict[str, Any]] = []
     for start, stop in zip(edges[::2], edges[1::2]):
-        # Переход между инженерными отсчётами интерполируется до целой секунды.
-        begin = round(max(0.0, float(times[start]) - step_s / 2.0))
-        end = round(float(times[stop - 1]) + step_s / 2.0)
+        begin = 0 if start == 0 else boundaries[start]
+        end = horizon_s if stop == states.size else boundaries[stop]
         breakdown = Counter(causes[start:stop])
         cause = breakdown.most_common(1)[0][0]
         gaps.append({
@@ -549,13 +799,19 @@ def _gaps(states: np.ndarray, causes: list[str], times: np.ndarray, step_s: floa
             "duration_s": max(0, end - begin),
             "cause": cause,
             "cause_label": CAUSE_LABEL.get(cause, cause),
-            "cause_breakdown": dict(breakdown),
+            "cause_breakdown_samples": dict(breakdown),
             "boundary_resolution_s": 1,
         })
     return gaps
 
 
-def _segments(states: np.ndarray, causes: list[str], times: np.ndarray, step_s: float) -> list[dict[str, Any]]:
+def _segments(
+    states: np.ndarray,
+    causes: list[str],
+    times: np.ndarray,
+    horizon_s: int,
+    boundaries: dict[int, int],
+) -> list[dict[str, Any]]:
     labels = ["routed" if ok else cause for ok, cause in zip(states, causes)]
     if not labels:
         return []
@@ -564,9 +820,11 @@ def _segments(states: np.ndarray, causes: list[str], times: np.ndarray, step_s: 
     for index in range(1, len(labels) + 1):
         if index < len(labels) and labels[index] == labels[start]:
             continue
+        begin = 0 if start == 0 else boundaries[start]
+        end = horizon_s if index == len(labels) else boundaries[index]
         output.append({
-            "start_s": round(max(0.0, float(times[start]) - (step_s / 2 if start else 0))),
-            "end_s": round(float(times[index - 1]) + step_s / 2),
+            "start_s": begin,
+            "end_s": end,
             "state": labels[start],
             "label": "маршрут доступен" if labels[start] == "routed" else CAUSE_LABEL.get(labels[start], labels[start]),
         })
