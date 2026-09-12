@@ -290,7 +290,7 @@ body.resizing-inspector { cursor: ew-resize; user-select: none; }
 .coverage-scale { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; margin: 0; color: var(--muted); font-size: 9px; }
 .coverage-scale span { display: inline-flex; align-items: center; gap: 6px; }
 .coverage-scale i { display: inline-block; width: 24px; height: 2px; border-radius: 4px; background: #68a9e0; opacity: .65; }
-.coverage-scale .route-key { height: 3px; background: var(--accent); box-shadow: 0 0 7px rgba(84,239,199,.55); opacity: 1; }
+.coverage-scale .route-key { height: 3px; background: #71ffdc; box-shadow: 0 0 10px rgba(84,239,199,.9); opacity: 1; }
 .coverage-scale .ground-key { height: 2px; background: repeating-linear-gradient(90deg, var(--warning) 0 5px, transparent 5px 8px); opacity: 1; }
 .coverage-scale .satellite-key { width: 8px; height: 8px; border-radius: 50%; background: #6fd6ff; box-shadow: 0 0 8px #6fd6ff; opacity: 1; }
 .coverage-scale .failed-key { background: var(--danger); box-shadow: none; }

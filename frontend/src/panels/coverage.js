@@ -132,8 +132,16 @@ function drawMap(state, canvas) {
       satellitePoints[routeIndices[index - 1]],
       satellitePoints[routeIndices[index]],
       width,
-      "rgba(84, 239, 199, .96)",
-      2.2 * ratio
+      "rgba(49, 255, 196, .32)",
+      6 * ratio
+    );
+    drawWrappedLine(
+      context,
+      satellitePoints[routeIndices[index - 1]],
+      satellitePoints[routeIndices[index]],
+      width,
+      "rgba(113, 255, 220, 1)",
+      2.6 * ratio
     );
   }
 

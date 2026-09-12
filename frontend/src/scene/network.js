@@ -60,10 +60,11 @@ export class Network {
     this.route = new THREE.Line(
       routeGeometry,
       new THREE.LineBasicMaterial({
-        color: 0x32ffc4,
+        color: 0x5cffe0,
         transparent: true,
         opacity: 1,
         depthTest: false,
+        blending: THREE.AdditiveBlending,
         toneMapped: false,
       })
     );
@@ -71,20 +72,38 @@ export class Network {
     this.route.renderOrder = 2;
     parent.add(this.route);
 
-    this.routeGlow = new THREE.Points(
+    // Второй аддитивный проход делает зелёный маршрут заметным и на светлой
+    // стороне Земли, не усиливая многочисленные фоновые линии сети.
+    this.routeGlow = new THREE.Line(
       routeGeometry,
-      new THREE.PointsMaterial({
-        color: 0xb6ffeb,
-        size: 0.065,
+      new THREE.LineBasicMaterial({
+        color: 0xb8fff0,
         transparent: true,
-        opacity: 1,
+        opacity: 0.72,
         depthTest: false,
+        blending: THREE.AdditiveBlending,
         toneMapped: false,
       })
     );
     this.routeGlow.frustumCulled = false;
     this.routeGlow.renderOrder = 3;
     parent.add(this.routeGlow);
+
+    this.routeNodesGlow = new THREE.Points(
+      routeGeometry,
+      new THREE.PointsMaterial({
+        color: 0xd5fff6,
+        size: 0.075,
+        transparent: true,
+        opacity: 1,
+        depthTest: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+      })
+    );
+    this.routeNodesGlow.frustumCulled = false;
+    this.routeNodesGlow.renderOrder = 4;
+    parent.add(this.routeNodesGlow);
   }
 
   /** Перерисовать межспутниковые связи отсчёта. */
@@ -142,6 +161,7 @@ export class Network {
     const show = visible && nodes.length > 1;
     this.route.visible = show;
     this.routeGlow.visible = show;
+    this.routeNodesGlow.visible = show;
     if (!show) {
       this.route.geometry.setDrawRange(0, 0);
       return;

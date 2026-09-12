@@ -87,6 +87,7 @@ export class Viewer {
       this.world.remove(this.network.groundVisibility);
       this.world.remove(this.network.route);
       this.world.remove(this.network.routeGlow);
+      this.world.remove(this.network.routeNodesGlow);
     }
     this.network = new Network(this.world, bundle.pairCount, bundle.satelliteCount);
   }
