@@ -37,7 +37,7 @@ from .profiles import get_profile, profile_catalog
 class ResearchOptions:
     link_mode: str = "hybrid"
     strategy: str = "max_margin"
-    step_s: int = 60
+    step_s: int = 120
     profile_ids: tuple[str, ...] = ("conservative", "nominal", "enhanced")
     epoch: datetime | None = None
 

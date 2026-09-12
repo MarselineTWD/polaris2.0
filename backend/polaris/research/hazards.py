@@ -109,7 +109,7 @@ def screen_hazards(
         "probability_computed": False,
         "detail": (
             "Предварительный TLE/OMM-screening. Вероятность столкновения не вычисляется: "
-            "для неё требуются CDM и ковариации Space-Track."
+            "для неё требуются достоверные CDM и ковариации объектов."
         ),
     }
 

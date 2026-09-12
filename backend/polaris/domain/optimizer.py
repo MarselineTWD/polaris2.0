@@ -130,15 +130,20 @@ def _score_batch(
     for start in range(0, len(candidates), 8):
         batch = candidates[start : start + 8]
         variants = [apply_candidate(scenario, candidate) for candidate in batch]
-        outcomes = map_scenarios(variants, FAST_OPTIONS, workers=workers)
+        outcomes = map_scenarios(
+            variants,
+            FAST_OPTIONS,
+            workers=workers,
+            # Проверяем отмену после каждого готового кандидата, а не только
+            # после всей порции. На слабом CPU одна порция может идти минуты.
+            progress=(lambda _done, _total: on_progress(1)) if on_progress else None,
+        )
         for candidate, outcome in zip(batch, outcomes):
             candidate.min_availability_pct = outcome["min_availability_pct"]
             candidate.mean_availability_pct = outcome["mean_availability_pct"]
             candidate.max_gap_s = outcome["max_gap_s"]
             candidate.worst_client = outcome["worst_client"] or ""
             candidate.clients = outcome["clients"]
-        if on_progress is not None:
-            on_progress(len(batch))
     return candidates
 
 

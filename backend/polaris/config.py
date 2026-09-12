@@ -29,7 +29,13 @@ class Settings:
     state_dir: Path = _path("POLARIS_STATE_DIR", BASE_DIR / ".state")
     run_cache_size: int = _int("POLARIS_RUN_CACHE", 24)
     max_upload_bytes: int = _int("POLARIS_MAX_UPLOAD", 8 * 1024 * 1024)
-    optimizer_workers: int = _int("POLARIS_OPTIMIZER_WORKERS", max(1, (os.cpu_count() or 2) - 1))
+    # Для 4-ядерного VPS три процесса считают варианты, одно ядро остаётся API и nginx.
+    optimizer_workers: int = _int(
+        "POLARIS_OPTIMIZER_WORKERS",
+        min(3, max(1, (os.cpu_count() or 2) - 1)),
+    )
+    max_concurrent_jobs: int = _int("POLARIS_MAX_CONCURRENT_JOBS", 1)
+    max_queued_jobs: int = _int("POLARIS_MAX_QUEUED_JOBS", 3)
 
     @property
     def database_path(self) -> Path:

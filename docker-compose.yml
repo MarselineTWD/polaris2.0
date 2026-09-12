@@ -4,7 +4,10 @@ services:
     image: polaris:1.0.0
     container_name: polaris
     environment:
-      POLARIS_OPTIMIZER_WORKERS: "4"
+      # Профиль для VPS с 4 CPU и 4 ГБ: одно ядро остаётся API и nginx.
+      POLARIS_OPTIMIZER_WORKERS: "3"
+      POLARIS_MAX_CONCURRENT_JOBS: "1"
+      POLARIS_MAX_QUEUED_JOBS: "3"
     volumes:
       - polaris-state:/app/state
     restart: unless-stopped

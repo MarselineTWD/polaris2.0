@@ -66,7 +66,7 @@ class SpofRequest(BaseModel):
 
 class OptimizeRequest(BaseModel):
     scenario: dict[str, Any]
-    max_evaluations: int = Field(default=160, ge=10, le=600)
+    max_evaluations: int = Field(default=60, ge=10, le=600)
 
 
 class ExternalRefreshRequest(BaseModel):
@@ -78,7 +78,7 @@ class ResearchRunRequest(BaseModel):
     scenario: dict[str, Any]
     link_mode: Literal["rf", "optical", "hybrid"] = "hybrid"
     strategy: Literal["min_hops", "min_latency", "max_margin"] = "max_margin"
-    step_s: int = Field(default=60, ge=1, le=300)
+    step_s: int = Field(default=120, ge=1, le=300)
     profile_ids: list[Literal["conservative", "nominal", "enhanced"]] = Field(
         default_factory=lambda: ["conservative", "nominal", "enhanced"],
         min_length=1,

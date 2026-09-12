@@ -32,8 +32,6 @@ SOURCE_INFO: dict[str, dict[str, Any]] = {
     "satnogs": {"label": "SatNOGS DB", "ttl_s": 86400, "kind": "observed"},
     "itur": {"label": "ITU-Rpy", "ttl_s": None, "kind": "model"},
     "satkit": {"label": "SatKit data", "ttl_s": None, "kind": "model"},
-    "space_track": {"label": "Space-Track CDM", "ttl_s": None, "kind": "restricted"},
-    "discos": {"label": "ESA DISCOS", "ttl_s": None, "kind": "restricted"},
 }
 
 REFRESHABLE = ("weather", "elevation", "space_weather", "celestrak", "satnogs")
@@ -125,19 +123,6 @@ class ExternalDataService:
         now = datetime.now(timezone.utc)
         sources: list[dict[str, Any]] = []
         for source, info in SOURCE_INFO.items():
-            if info["kind"] == "restricted":
-                sources.append({
-                    "id": source,
-                    "label": info["label"],
-                    "kind": info["kind"],
-                    "status": "requires_auth",
-                    "origin": "not_connected",
-                    "retrieved_at": None,
-                    "valid_until": None,
-                    "sha256": None,
-                    "detail": "Необязательный источник: требуется отдельная учётная запись",
-                })
-                continue
             if source in {"itur", "satkit"}:
                 package = "itur" if source == "itur" else "satkit"
                 installed = importlib.util.find_spec(package) is not None

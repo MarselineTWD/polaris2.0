@@ -79,7 +79,7 @@ def test_research_result_has_range_physics_and_sources(monkeypatch, tmp_path, fu
     service = ExternalDataService(tmp_path)
     data, sources = service.data_for_run()
     result = research_engine.run_research(
-        scenario, data, sources, ResearchOptions(step_s=60, link_mode="hybrid")
+        scenario, data, sources, ResearchOptions(step_s=120, link_mode="hybrid")
     )
     assert result["schema"] == "polaris-research-result-1"
     assert result["operational_use"] is False

@@ -95,7 +95,10 @@ database = Database(settings.database_path)
 variants = VariantRepository(database)
 runs = RunRegistry(settings.run_cache_size)
 presets = Presets(settings.data_dir)
-jobs = JobRegistry()
+jobs = JobRegistry(
+    max_concurrent=settings.max_concurrent_jobs,
+    max_queued=settings.max_queued_jobs,
+)
 external_data = ExternalDataService(settings.state_dir / "external-data")
 research_runs = ResearchRegistry(settings.state_dir / "research-runs")
 

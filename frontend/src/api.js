@@ -121,7 +121,7 @@ export const api = {
 };
 
 /** Дождаться завершения фоновой задачи, сообщая прогресс. */
-export async function awaitJob(jobId, onProgress, { interval = 400, limit = 600 } = {}) {
+export async function awaitJob(jobId, onProgress, { interval = 1000, limit = 1200 } = {}) {
   for (let attempt = 0; attempt < limit; attempt += 1) {
     const job = await api.job(jobId);
     if (onProgress) onProgress(job);

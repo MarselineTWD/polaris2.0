@@ -224,9 +224,11 @@ def test_optimize_job_runs_to_completion(client: TestClient) -> None:
     assert accepted.status_code == 202
     job_id = accepted.json()["id"]
 
-    for _ in range(120):
+    # Старт процессного пула на Windows и загруженных CI-агентах может занять
+    # больше 30 секунд, хотя задача продолжает корректно выполняться.
+    for _ in range(600):
         status = client.get(f"/api/jobs/{job_id}").json()
-        if status["status"] != "running":
+        if status["status"] not in {"queued", "running"}:
             break
         time.sleep(0.25)
 
@@ -254,7 +256,7 @@ def test_optimize_job_can_be_cancelled(client: TestClient) -> None:
     cancelled = client.post(f"/api/jobs/{job_id}/cancel")
     assert cancelled.status_code == 200
 
-    for _ in range(80):
+    for _ in range(300):
         status = client.get(f"/api/jobs/{job_id}").json()
         if status["status"] == "cancelled":
             break

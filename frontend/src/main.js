@@ -31,6 +31,7 @@ let urlSyncTimer = null;
 let sceneAssetsReady = false;
 let initialScenarioReady = false;
 let activeJobId = null;
+let jobLaunchPending = false;
 
 function updateSceneLoading() {
   if (sceneAssetsReady && initialScenarioReady) $("scene-loading").hidden = true;
@@ -418,9 +419,15 @@ async function runComparison(variantIds) {
 
 async function runBackgroundJob(kind, starter, title, { cancellable = false } = {}) {
   if (!state.applied) return;
+  if (jobLaunchPending || activeJobId) {
+    toast("Дождитесь завершения или отмените текущий расчёт", "warn");
+    return;
+  }
+  jobLaunchPending = true;
   setBusy(true, title, "Запускаем…");
   try {
     const job = await starter();
+    jobLaunchPending = false;
     if (cancellable) {
       activeJobId = job.id;
       $("cancel-job").hidden = false;
@@ -431,6 +438,13 @@ async function runBackgroundJob(kind, starter, title, { cancellable = false } = 
       if (progress.status === "cancelling") {
         $("blocking-title").textContent = "Останавливаем подбор";
         $("blocking-detail").textContent = "Завершаем текущую порцию расчётов";
+        return;
+      }
+      if (progress.status === "queued") {
+        $("blocking-title").textContent = "Расчёт поставлен в очередь";
+        $("blocking-detail").textContent = progress.queue_position
+          ? `Позиция в очереди: ${progress.queue_position}`
+          : "Ожидаем освобождения вычислителя";
         return;
       }
       const percentDone = Math.round((progress.progress || 0) * 100);
@@ -445,6 +459,7 @@ async function runBackgroundJob(kind, starter, title, { cancellable = false } = 
     if (error instanceof ApiError && error.code === "job_cancelled") toast("Расчёт отменён", "ok");
     else reportError(error);
   } finally {
+    jobLaunchPending = false;
     activeJobId = null;
     $("cancel-job").hidden = true;
     setBusy(false);
@@ -466,15 +481,28 @@ async function loadResearchPanel() {
 }
 
 async function runResearchJob(starter, title, onDone) {
+  if (jobLaunchPending || activeJobId) {
+    toast("Дождитесь завершения или отмените текущий расчёт", "warn");
+    return;
+  }
+  jobLaunchPending = true;
   setBusy(true, title, "Запускаем фоновую задачу…");
   try {
     const job = await starter();
+    jobLaunchPending = false;
     activeJobId = job.id;
     $("cancel-job").hidden = false;
     $("cancel-job").disabled = false;
     $("cancel-job").textContent = "Отменить расчёт";
     const result = await awaitJob(job.id, (current) => {
       const percentDone = Math.round((current.progress || 0) * 100);
+      if (current.status === "queued") {
+        $("blocking-title").textContent = "Расчёт поставлен в очередь";
+        $("blocking-detail").textContent = current.queue_position
+          ? `Позиция в очереди: ${current.queue_position}`
+          : "Ожидаем освобождения вычислителя";
+        return;
+      }
       $("blocking-title").textContent =
         current.status === "cancelling" ? "Останавливаем задачу" : title;
       $("blocking-detail").innerHTML =
@@ -482,12 +510,13 @@ async function runResearchJob(starter, title, onDone) {
           ? "Завершаем текущий безопасный этап"
           : `<div class="progress-bar"><i style="width:${percentDone}%"></i></div>` +
             `<div style="margin-top:7px">${percentDone}% · ${current.done} из ${current.total || "—"}</div>`;
-    }, { interval: 500, limit: 1200 });
+    }, { interval: 1000, limit: 1200 });
     await onDone(result);
   } catch (error) {
     if (error instanceof ApiError && error.code === "job_cancelled") toast("Расчёт отменён", "ok");
     else reportError(error);
   } finally {
+    jobLaunchPending = false;
     activeJobId = null;
     $("cancel-job").hidden = true;
     setBusy(false);
@@ -520,7 +549,7 @@ async function startResearchVerification() {
     () => api.runResearch(state.applied, {
       link_mode: state.research.linkMode,
       strategy: "max_margin",
-      step_s: 60,
+      step_s: 120,
       profile_ids: ["conservative", "nominal", "enhanced"],
     }),
     "Инженерная верификация",
@@ -908,7 +937,7 @@ function bindControls() {
     runOptimize: () =>
       runBackgroundJob(
         "optimize",
-        () => api.optimize(state.applied, 160),
+        () => api.optimize(state.applied, 60),
         "Подбираем конфигурацию",
         { cancellable: true }
       ),
