@@ -23,6 +23,7 @@
       <div class="calculation-state"><span></span>Расчёт актуален</div>
 
       <div class="top-actions">
+        <button class="button button-subtle" id="project-button" type="button"><b aria-hidden="true">⚙</b><span>Проект</span></button>
         <button class="button button-subtle" id="compare-button" type="button">⇄ <span>Сравнить</span></button>
         <button class="button button-subtle" id="export-button" type="button">↓ <span>Экспорт</span></button>
         <button class="button button-primary" id="calculate-button" type="button">▶ <span>Пересчитать</span></button>
@@ -30,20 +31,11 @@
     </header>
 
     <div class="workspace">
-      <nav class="side-nav" aria-label="Разделы">
-        <button class="nav-item active" data-section="overview" type="button"><span>◎</span><small>Обзор</small></button>
-        <button class="nav-item" data-section="configuration" type="button"><span>⌁</span><small>Проект</small></button>
-        <button class="nav-item" data-section="failures" type="button"><span>⚠</span><small>Отказы</small></button>
-        <button class="nav-item" data-section="analytics" type="button"><span>⌁</span><small>Анализ</small></button>
-        <button class="nav-item" data-section="variants" type="button"><span>▱</span><small>Варианты</small></button>
-        <div class="nav-spacer"></div>
-        <button class="nav-item" data-section="settings" type="button"><span>⚙</span><small>Вид</small></button>
-      </nav>
-
       <main class="main-column">
         <section class="space-view" id="space-view">
           <canvas id="space-canvas" aria-label="Интерактивная схема Земли и спутниковой группировки"></canvas>
           <div class="webgl-error" id="webgl-error" hidden></div>
+          <div class="object-tooltip" id="object-tooltip" hidden></div>
 
           <div class="scene-toolbar">
             <div class="stage-control" aria-label="Этап развёртывания">
@@ -54,17 +46,17 @@
             <div class="time-chip"><span class="pulse"></span><strong id="scene-time">06:00</strong> UTC</div>
           </div>
 
-          <div class="scene-stats">
-            <div><span>Активные аппараты</span><strong id="active-count">48</strong></div>
-            <div><span>Связи в сети</span><strong id="links-count">82</strong></div>
-            <div><span>Выбранный маршрут</span><strong id="route-hops">3 перехода</strong></div>
+          <div class="scene-summary">
+            <span><strong id="active-count">48</strong> активны</span>
+            <i></i>
+            <span><strong id="links-count">82</strong> связи</span>
           </div>
 
           <div class="view-controls">
-            <button id="home-camera" type="button" title="Сбросить камеру">⌂</button>
-            <button id="toggle-earth" class="active" type="button" title="Остановить вращение Земли">↻</button>
-            <button id="toggle-links" class="active" type="button" title="Показать связи">⌁</button>
-            <button id="toggle-orbits" class="active" type="button" title="Показать орбиты">◉</button>
+            <button id="home-camera" type="button" title="Сбросить камеру"><b>⌂</b><span>Камера</span></button>
+            <button id="toggle-earth" class="active" type="button" title="Остановить вращение Земли"><b>↻</b><span>Земля</span></button>
+            <button id="toggle-links" class="active" type="button" title="Показать связи"><b>⌁</b><span>Связи</span></button>
+            <button id="toggle-orbits" class="active" type="button" title="Показать орбиты"><b>◉</b><span>Орбиты</span></button>
           </div>
 
           <div class="scene-legend">
@@ -74,7 +66,7 @@
             <span><i class="legend-line"></i>Маршрут</span>
           </div>
 
-          <div class="scene-hint">Перетащите, чтобы повернуть · колесо — масштаб</div>
+          <div class="scene-hint">Перетащите Землю · колесо — масштаб · нажмите на спутник</div>
         </section>
 
         <section class="timeline-panel">
@@ -105,44 +97,8 @@
         </section>
       </main>
 
-      <aside class="inspector">
-        <div class="inspector-topline"><span>НАЗЕМНЫЙ ТЕРМИНАЛ</span><button id="close-inspector" type="button">•••</button></div>
-        <h1 id="client-name">Northern terminal 70</h1>
-        <p id="client-coords">70.0° N · 90.0° E</p>
-
-        <div class="client-switch" aria-label="Выбрать терминал">
-          <button data-client="C65" type="button">C65</button>
-          <button data-client="C70" class="active" type="button">C70</button>
-          <button data-client="C72" type="button">C72</button>
-        </div>
-
-        <section class="availability-card">
-          <div class="metric-line"><strong id="availability-value">98,75%</strong><span class="goal-state">✓ Цель достигнута</span></div>
-          <p>Доступность маршрута за сутки</p>
-          <div class="progress-track"><span id="availability-progress"></span><i></i></div>
-          <div class="progress-label"><span>0%</span><span>Цель 90%</span><span>100%</span></div>
-        </section>
-
-        <section class="route-section">
-          <div class="section-title"><span>Текущий маршрут</span><strong><i></i>Доступен</strong></div>
-          <div class="route-chain" id="route-chain"></div>
-          <button class="text-action" id="focus-route" type="button">Показать маршрут на орбите →</button>
-        </section>
-
-        <section class="metrics-section">
-          <div class="section-title"><span>Показатели</span><em>24 часа</em></div>
-          <div class="metric-grid">
-            <div><span>Видимость</span><strong id="visibility-value">99,86%</strong></div>
-            <div><span>Макс. перерыв</span><strong id="outage-value">2 мин</strong></div>
-            <div><span>Средний маршрут</span><strong id="average-hops">2,66</strong></div>
-            <div><span>Резервных путей</span><strong id="backup-routes">2</strong></div>
-          </div>
-        </section>
-
-        <section class="recommendation">
-          <span>ВЫВОД СИСТЕМЫ</span>
-          <p id="recommendation-text">Конфигурация достигает целевой доступности для C70. Критических разрывов сети не обнаружено.</p>
-        </section>
+      <aside class="inspector" id="inspector" aria-live="polite">
+        <div id="selection-content"></div>
       </aside>
     </div>
   </div>
@@ -151,6 +107,7 @@
   <aside class="drawer" id="configuration-drawer" aria-hidden="true">
     <div class="drawer-header"><div><span>КОНФИГУРАЦИЯ</span><h2>Параметры проекта</h2></div><button class="icon-button" data-close-drawer type="button">×</button></div>
     <div class="drawer-content">
+      <label class="upload-zone" for="scenario-file"><strong>Загрузить JSON-сценарий</strong><span>Поддерживается схема cosmo-A-1.0</span><input id="scenario-file" type="file" accept=".json,application/json" /></label>
       <label class="field"><span>Сценарий</span><select id="scenario-select"><option value="full">Полная группировка</option><option value="first">Первая очередь запуска</option><option value="outages">Недоступность 10 аппаратов</option><option value="range">Дальность ISL 2000 км</option></select></label>
       <div class="form-grid">
         <label class="field"><span>Высота орбиты</span><div class="input-unit"><input value="550" type="number" /><small>км</small></div></label>
