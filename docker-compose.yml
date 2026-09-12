@@ -3,11 +3,14 @@ services:
     build: .
     image: polaris:1.0.0
     container_name: polaris
+    ports:
+      # Локальный доступ без nginx; на внешнем интерфейсе сервера порт не публикуется.
+      - "${POLARIS_BIND_ADDRESS:-127.0.0.1}:${POLARIS_PORT:-8000}:8000"
     environment:
       # Профиль для VPS с 4 CPU и 4 ГБ: одно ядро остаётся API и nginx.
-      POLARIS_OPTIMIZER_WORKERS: "3"
-      POLARIS_MAX_CONCURRENT_JOBS: "1"
-      POLARIS_MAX_QUEUED_JOBS: "3"
+      POLARIS_OPTIMIZER_WORKERS: "${POLARIS_OPTIMIZER_WORKERS:-3}"
+      POLARIS_MAX_CONCURRENT_JOBS: "${POLARIS_MAX_CONCURRENT_JOBS:-1}"
+      POLARIS_MAX_QUEUED_JOBS: "${POLARIS_MAX_QUEUED_JOBS:-3}"
     volumes:
       - polaris-state:/app/state
     restart: unless-stopped
