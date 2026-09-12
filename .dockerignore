@@ -1,0 +1,12 @@
+.git
+.venv
+__pycache__
+*.pyc
+backend/.state
+backend/.pytest_cache
+.pytest_cache
+# Прототип и документы задания в образе не нужны — это ~5 МБ картинок и PDF.
+frontend-prototype
+output
+Тех задание
+.claude

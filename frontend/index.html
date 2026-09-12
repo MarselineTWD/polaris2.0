@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#050914" />
+  <title>POLARIS — проектирование устойчивой спутниковой группировки</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="POLARIS, главная">
+        <span class="brand-mark">◉</span>
+        <span><strong>POLARIS</strong><small>CONSTELLATION LAB</small></span>
+      </a>
+
+      <div class="project-heading">
+        <div class="project-name" id="project-name">—</div>
+        <div class="project-meta" id="project-meta"></div>
+      </div>
+
+      <div class="calculation-state" id="calc-state"><span></span><b>Готов к расчёту</b></div>
+
+      <div class="top-actions">
+        <button class="button button-subtle" id="project-button" type="button"><b aria-hidden="true">⚙</b><span>Проект</span></button>
+        <button class="button button-subtle" id="analysis-button" type="button"><b aria-hidden="true">◎</b><span>Анализ</span></button>
+        <button class="button button-subtle" id="compare-button" type="button"><b aria-hidden="true">⇄</b><span>Сравнить</span></button>
+        <button class="button button-subtle" id="export-button" type="button"><b aria-hidden="true">↓</b><span>Экспорт</span></button>
+        <button class="button button-primary" id="calculate-button" type="button"><b aria-hidden="true">▶</b><span>Пересчитать</span></button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <main class="main-column">
+        <section class="space-view" id="space-view">
+          <canvas id="space-canvas" aria-label="Интерактивная схема Земли и спутниковой группировки"></canvas>
+          <div class="webgl-error" id="webgl-error" hidden></div>
+          <div class="object-tooltip" id="object-tooltip" hidden></div>
+
+          <div class="scene-toolbar">
+            <div class="stage-control" role="group" aria-label="Этап развёртывания">
+              <button data-stage="1" type="button">Этап 1</button>
+              <button data-stage="2" type="button">Этап 2</button>
+              <button data-stage="3" type="button">Этап 3</button>
+            </div>
+            <label class="strategy-control">Маршрутизация
+              <select id="strategy-select" aria-label="Стратегия маршрутизации"></select>
+            </label>
+            <div class="time-chip"><span class="pulse"></span><strong id="scene-time">00:00</strong></div>
+          </div>
+
+          <div class="scene-summary" id="scene-summary"></div>
+
+          <div class="view-controls">
+            <button id="home-camera" type="button" title="Сбросить камеру"><b>⌂</b><span>Камера</span></button>
+            <button id="toggle-links" class="active" type="button" title="Показать межспутниковые связи"><b>⌁</b><span>Связи</span></button>
+            <button id="toggle-orbits" class="active" type="button" title="Показать орбиты"><b>◉</b><span>Орбиты</span></button>
+            <button id="toggle-route" class="active" type="button" title="Показать маршрут"><b>➔</b><span>Маршрут</span></button>
+          </div>
+
+          <div class="scene-legend">
+            <span><i class="legend-dot active-sat"></i>Активен</span>
+            <span><i class="legend-dot route-sat"></i>В маршруте</span>
+            <span><i class="legend-dot failed-sat"></i>Недоступен</span>
+            <span><i class="legend-line"></i>Маршрут</span>
+          </div>
+
+          <div class="scene-hint">Перетащите Землю · колесо — масштаб · нажмите на аппарат или пункт</div>
+        </section>
+
+        <section class="timeline-panel">
+          <div class="timeline-header">
+            <div class="playback">
+              <button class="play-button" id="play-button" type="button" aria-label="Запустить или остановить время">▶</button>
+              <div><span>Состояние сети</span><strong id="timeline-time">00:00:00</strong></div>
+            </div>
+            <div class="timeline-actions">
+              <label>Скорость
+                <select id="speed-select">
+                  <option value="60">×60</option>
+                  <option value="300" selected>×300</option>
+                  <option value="900">×900</option>
+                  <option value="3600">×3600</option>
+                </select>
+              </label>
+              <span id="step-info">Шаг расчёта: —</span>
+            </div>
+          </div>
+
+          <div class="scrubber-wrap">
+            <input id="time-range" type="range" min="0" max="86280" step="120" value="21600" aria-label="Время расчёта" />
+            <div class="time-axis" id="time-axis"></div>
+          </div>
+
+          <div class="availability-lanes" id="availability-lanes"></div>
+          <div class="timeline-legend">
+            <span><i class="available"></i>Маршрут доступен</span>
+            <span><i class="degraded"></i>Есть покрытие, но нет пути</span>
+            <span><i class="outage"></i>Нет покрытия</span>
+          </div>
+        </section>
+      </main>
+
+      <aside class="inspector" id="inspector" aria-live="polite">
+        <div id="selection-content"></div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
+
+  <aside class="drawer" id="configuration-drawer" aria-hidden="true" aria-label="Параметры проекта">
+    <div class="drawer-header">
+      <div><span>КОНФИГУРАЦИЯ</span><h2>Параметры проекта</h2></div>
+      <button class="icon-button" data-close-drawer type="button" aria-label="Закрыть">×</button>
+    </div>
+    <div class="drawer-content" id="drawer-content"></div>
+    <div class="drawer-footer">
+      <button class="button button-subtle" id="reset-config" type="button">Сбросить изменения</button>
+      <button class="button button-primary" id="apply-config" type="button">Применить и рассчитать</button>
+    </div>
+  </aside>
+
+  <div class="modal-backdrop" id="compare-modal" aria-hidden="true">
+    <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="compare-title">
+      <div class="drawer-header">
+        <div><span>СРАВНЕНИЕ ВАРИАНТОВ</span><h2 id="compare-title">Сопоставление проектных решений</h2></div>
+        <button class="icon-button" data-close-modal="compare-modal" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-content" id="compare-content"></div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="analysis-modal" aria-hidden="true">
+    <section class="modal-panel wide" role="dialog" aria-modal="true" aria-labelledby="analysis-title">
+      <div class="drawer-header">
+        <div><span>АНАЛИЗ УСТОЙЧИВОСТИ</span><h2 id="analysis-title">Уязвимости, резерв и стратегии</h2></div>
+        <button class="icon-button" data-close-modal="analysis-modal" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-content" id="analysis-content"></div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+  <div class="blocking-overlay" id="blocking-overlay" hidden>
+    <div class="blocking-card"><div class="spinner"></div><strong id="blocking-title">Считаем…</strong><span id="blocking-detail"></span></div>
+  </div>
+
+  <script>
+    window.addEventListener("error", function (event) {
+      var panel = document.getElementById("webgl-error");
+      if (!panel) return;
+      panel.hidden = false;
+      panel.textContent = "Ошибка интерфейса: " + (event.message || "не удалось загрузить модуль");
+    });
+  </script>
+  <script src="vendor/three.min.js"></script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

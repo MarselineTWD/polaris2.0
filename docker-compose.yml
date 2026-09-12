@@ -1,0 +1,17 @@
+services:
+  polaris:
+    build: .
+    image: polaris:1.0.0
+    container_name: polaris
+    ports:
+      - "8000:8000"
+    environment:
+      # Число процессов для автоподбора конфигурации и свипа точек отказа.
+      POLARIS_OPTIMIZER_WORKERS: "4"
+    volumes:
+      # Сохранённые варианты переживают пересборку контейнера.
+      - polaris-state:/app/state
+    restart: unless-stopped
+
+volumes:
+  polaris-state:
