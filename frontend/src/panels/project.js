@@ -45,8 +45,8 @@ export function renderProject(state) {
     ${fieldErrorsMarkup(problems)}
 
     <label class="upload-zone" for="scenario-file">
-      <strong>Загрузить JSON-сценарий</strong>
-      <span>Схема cosmo-A-1.0 · файл заменит текущую конфигурацию</span>
+      <strong>Импортировать JSON</strong>
+      <span>Сценарий или экспорт Polaris · конфигурация будет извлечена автоматически</span>
       <input id="scenario-file" type="file" accept=".json,application/json" />
     </label>
 

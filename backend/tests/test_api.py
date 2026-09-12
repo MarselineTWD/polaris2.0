@@ -117,6 +117,8 @@ def test_export_downloads_result_schema(client: TestClient, payload: dict) -> No
     response = client.get(f"/api/runs/{run_id}/export")
     assert response.status_code == 200
     assert "attachment" in response.headers["content-disposition"]
+    assert response.content.startswith(b"{\n  \"")
+    assert response.content.endswith(b"\n")
     body = response.json()
     assert body["schema_version"] == "cosmo-A-result-1.0"
     assert len(body["routes"]) == 720 * 3
@@ -201,6 +203,14 @@ def test_optimize_job_can_be_cancelled(client: TestClient) -> None:
     )
     assert accepted.status_code == 202
     job_id = accepted.json()["id"]
+
+    # Отмена должна работать не только сразу после постановки в очередь, но и
+    # после того, как пул уже закончил первую порцию вариантов.
+    for _ in range(80):
+        running = client.get(f"/api/jobs/{job_id}").json()
+        if running["done"] > 0 or running["status"] != "running":
+            break
+        time.sleep(0.05)
     cancelled = client.post(f"/api/jobs/{job_id}/cancel")
     assert cancelled.status_code == 200
 

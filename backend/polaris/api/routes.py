@@ -44,14 +44,22 @@ def _json(
     *,
     filename: str | None = None,
     status_code: int = 200,
+    pretty: bool = False,
 ) -> Response:
     """Отдать JSON без NaN/Infinity — схема выгрузки требует конечных значений."""
-    body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    body = json.dumps(
+        payload,
+        ensure_ascii=False,
+        allow_nan=False,
+        indent=2 if pretty else None,
+    )
+    if pretty:
+        body += "\n"
     headers = (
         {"Content-Disposition": f'attachment; filename="{filename}"'} if filename else None
     )
     return Response(
-        content=body,
+        content=body.encode("utf-8"),
         media_type="application/json",
         headers=headers,
         status_code=status_code,
@@ -163,7 +171,7 @@ def export_run(run_id: str) -> Response:
     result, _ = entry
     payload = export_result(result)
     title = result.scenario.meta.get("id") or "polaris"
-    return _json(payload, filename=f"{title}-result.json")
+    return _json(payload, filename=f"{title}-result.json", pretty=True)
 
 
 @router.get("/runs/{run_id}/snapshot")
@@ -223,7 +231,7 @@ def export_variant(variant_id: str) -> Response:
     saved = variants.get(variant_id)
     if saved is None:
         raise HTTPException(status_code=404, detail="Вариант не найден")
-    return _json(saved["scenario"], filename=f"{variant_id}-scenario.json")
+    return _json(saved["scenario"], filename=f"{variant_id}-scenario.json", pretty=True)
 
 
 @router.delete("/variants/{variant_id}")
@@ -594,7 +602,7 @@ def export_research_run(run_id: str) -> Response:
     result = research_runs.get(run_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Инженерный расчёт не найден")
-    return _json(result, filename=f"{run_id}-engineering-verification.json")
+    return _json(result, filename=f"{run_id}-engineering-verification.json", pretty=True)
 
 
 @router.post("/research/runs/{run_id}/hazards/{event_id}/scenario")

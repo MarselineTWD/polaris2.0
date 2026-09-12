@@ -113,8 +113,9 @@ button { color: inherit; }
 .timeline-zoom button:hover:not(:disabled) { color: var(--accent); background: rgba(84,239,199,.09); }
 .timeline-zoom button:disabled { color: rgba(132,152,180,.34); cursor: default; }
 .timeline-zoom span { min-width: 43px; color: var(--text); font-size: 9px; font-variant-numeric: tabular-nums; text-align: center; }
+.timeline-zoom input[type="range"] { width: 92px; min-width: 58px; height: 18px; margin: 0 4px; accent-color: var(--accent); cursor: pointer; }
 .timeline-zoom .timeline-zoom-reset { width: auto; margin-left: 2px; padding-inline: 8px; border-left: 1px solid var(--line); border-radius: 0 6px 6px 0; color: var(--muted); font-size: 9px; }
-.scrubber-wrap { position: relative; margin: 10px 0 6px 56px; }
+.scrubber-wrap { position: relative; margin: 10px 72px 6px 52px; }
 #time-range { width: 100%; height: 14px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .time-axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 8px; }
 .availability-lanes { display: grid; gap: 6px; }
@@ -310,6 +311,13 @@ body.resizing-inspector { cursor: ew-resize; user-select: none; }
   .top-actions .button-subtle span { display: none; }
   .calculation-state b { display: none; }
   .calculation-state { flex: 0 0 12px; }
+}
+
+@media (max-width: 1200px) {
+  .timeline-actions { gap: 9px; }
+  .timeline-actions > #step-info { display: none; }
+  .timeline-zoom .timeline-zoom-reset { display: none; }
+  .timeline-zoom input[type="range"] { width: 72px; }
 }
 
 @media (max-width: 980px) {

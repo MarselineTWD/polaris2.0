@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import replace
 from typing import Any, Callable, Iterable, Sequence
 
@@ -55,16 +56,26 @@ def map_scenarios(
 
     workers = workers or max(1, (os.cpu_count() or 2) - 1)
     if workers > 1 and total > 1:
+        pool: ProcessPoolExecutor | None = None
         try:
             results: list[dict[str, Any]] = []
-            with ProcessPoolExecutor(max_workers=workers) as pool:
-                for index, item in enumerate(pool.map(_evaluate_scenario, payloads), start=1):
-                    results.append(item)
-                    if progress is not None:
-                        progress(index, total)
+            pool = ProcessPoolExecutor(max_workers=workers)
+            for index, item in enumerate(pool.map(_evaluate_scenario, payloads), start=1):
+                results.append(item)
+                if progress is not None:
+                    progress(index, total)
+            pool.shutdown(wait=True)
             return results
-        except Exception:  # noqa: BLE001 - осознанный откат на последовательный путь
-            pass
+        except (BrokenProcessPool, OSError, RuntimeError):
+            # Только инфраструктурная ошибка пула включает последовательный
+            # fallback. Исключение из progress-callback (включая отмену задачи)
+            # обязано выйти наружу, а не запускать весь расчёт повторно.
+            if pool is not None:
+                pool.shutdown(wait=False, cancel_futures=True)
+        except BaseException:
+            if pool is not None:
+                pool.shutdown(wait=False, cancel_futures=True)
+            raise
 
     results = []
     for index, payload in enumerate(payloads, start=1):

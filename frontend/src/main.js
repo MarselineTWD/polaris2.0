@@ -348,6 +348,20 @@ function downloadJson(payload, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * Поддержать все JSON-файлы, которые умеет выгружать интерфейс:
+ * исходный сценарий, полный результат быстрого расчёта и инженерный паспорт.
+ */
+function scenarioFromImportedJson(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  if (payload.schema_version === "cosmo-A-1.0") return payload;
+  if (payload.effective_scenario?.schema_version === "cosmo-A-1.0") {
+    return payload.effective_scenario;
+  }
+  if (payload.scenario?.schema_version === "cosmo-A-1.0") return payload.scenario;
+  return null;
+}
+
 async function exportSavedVariant(variantId) {
   const variant = state.variants.find((item) => item.id === variantId);
   if (!variant) {
@@ -776,14 +790,19 @@ function bindControls() {
       try {
         const text = await file.text();
         const payload = JSON.parse(text);
-        const check = await api.validate(payload);
+        const scenario = scenarioFromImportedJson(payload);
+        if (!scenario) {
+          toast("JSON не содержит сценарий схемы cosmo-A-1.0", "error");
+          return;
+        }
+        const check = await api.validate(scenario);
         if (!check.valid) {
           setProblems(check.errors);
           renderProject(state);
           toast(`В файле ${check.errors.length} проблем — см. список в шторке`, "error");
           return;
         }
-        await loadScenario(payload, { title: payload?.meta?.title || file.name });
+        await loadScenario(scenario, { title: scenario.meta?.title || file.name });
         toast(`Сценарий «${file.name}» загружен и рассчитан`, "ok");
       } catch (error) {
         if (error instanceof SyntaxError) {
@@ -830,7 +849,12 @@ function bindControls() {
       }
     },
     runSpof: () =>
-      runBackgroundJob("spof", () => api.spof(state.applied), "Проверяем каждый аппарат"),
+      runBackgroundJob(
+        "spof",
+        () => api.spof(state.applied),
+        "Проверяем каждый аппарат",
+        { cancellable: true }
+      ),
     runOptimize: () =>
       runBackgroundJob(
         "optimize",

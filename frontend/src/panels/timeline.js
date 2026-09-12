@@ -23,6 +23,9 @@ export function initTimeline(callbacks) {
   );
   $("timeline-zoom-in").addEventListener("click", () => changeZoom(1));
   $("timeline-zoom-out").addEventListener("click", () => changeZoom(-1));
+  $("timeline-zoom-range").addEventListener("input", (event) =>
+    setZoom(Number(event.target.value))
+  );
   $("timeline-zoom-reset").addEventListener("click", resetZoom);
   $("timeline-pan-prev").addEventListener("click", () => panWindow(-1));
   $("timeline-pan-next").addEventListener("click", () => panWindow(1));
@@ -165,7 +168,12 @@ function keepTimeVisible(bundle, seconds) {
 
 function changeZoom(direction) {
   if (!latestState?.bundle) return;
-  const next = Math.max(0, Math.min(ZOOM_FACTORS.length - 1, zoomIndex + direction));
+  setZoom(zoomIndex + direction);
+}
+
+function setZoom(value) {
+  if (!latestState?.bundle) return;
+  const next = Math.max(0, Math.min(ZOOM_FACTORS.length - 1, Math.round(value)));
   if (next === zoomIndex) return;
   const center = latestState.timeSeconds;
   zoomIndex = next;
@@ -198,6 +206,7 @@ function updateZoomControls(bundle, view) {
   $("timeline-zoom-reset").disabled = zoomIndex === 0;
   $("timeline-pan-prev").disabled = zoomIndex === 0 || view.start <= 0;
   $("timeline-pan-next").disabled = zoomIndex === 0 || view.start >= view.maximumStart;
+  $("timeline-zoom-range").value = String(zoomIndex);
   $("timeline-zoom-label").textContent = formatSpan(view.span);
   $("timeline-zoom-label").title = `Видимый интервал: ${formatSpan(view.span)} из ${formatSpan(bundle.horizonSeconds)}`;
 }
