@@ -234,7 +234,9 @@ function nearestSatellite(canvas, event) {
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
   let best = null;
-  let distance = 12;
+  // Маркер намеренно компактный, а зона взаимодействия крупнее: так аппарат
+  // можно уверенно выбрать мышью и пальцем, не превращая карту в россыпь точек.
+  let distance = 18;
   for (const target of hitTargets) {
     const candidate = Math.hypot(target.x - x, target.y - y);
     if (candidate < distance) { best = target; distance = candidate; }

@@ -69,6 +69,8 @@ export class Viewer {
     this.raycaster.params.Line.threshold = 0.018;
     this.pointer = new THREE.Vector2();
     this.scratch = new THREE.Vector3();
+    this.pickWorld = new THREE.Vector3();
+    this.pickProjected = new THREE.Vector3();
     this.routeNodes = [];
 
     this.bindPointer();
@@ -208,6 +210,7 @@ export class Viewer {
   bindPointer() {
     let dragging = false;
     let start = null;
+    let pressedOwner = null;
     let previous = { x: 0, y: 0 };
 
     const setPointer = (event) => {
@@ -217,8 +220,10 @@ export class Viewer {
     };
 
     this.canvas.addEventListener("pointerdown", (event) => {
+      setPointer(event);
       start = { x: event.clientX, y: event.clientY };
       previous = { x: event.clientX, y: event.clientY };
+      pressedOwner = this.pick();
       dragging = false;
       this.canvas.setPointerCapture(event.pointerId);
     });
@@ -226,7 +231,7 @@ export class Viewer {
     this.canvas.addEventListener("pointermove", (event) => {
       if (start) {
         const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
-        if (moved > 4 && !dragging) {
+        if (moved > 7 && !dragging) {
           dragging = true;
           if (this.onCameraControl) this.onCameraControl();
         }
@@ -251,20 +256,25 @@ export class Viewer {
       // менять выделение.
       if (start && !dragging) {
         setPointer(event);
-        const hit = this.pick();
+        // При проигрывании аппарат движется и может покинуть зону pointerup.
+        // В таком случае выбираем объект, который был нажат изначально.
+        const hit = pressedOwner || this.pick();
         if (hit && this.onPick) this.onPick(hit);
       }
       start = null;
+      pressedOwner = null;
       dragging = false;
     });
 
     this.canvas.addEventListener("pointercancel", () => {
       start = null;
+      pressedOwner = null;
       dragging = false;
     });
 
     this.canvas.addEventListener("pointerleave", (event) => {
       start = null;
+      pressedOwner = null;
       dragging = false;
       if (this.onHover) this.onHover(null, event);
     });
@@ -295,6 +305,8 @@ export class Viewer {
         if (owner) return owner;
       }
     }
+    const projectedSatellite = this.pickProjectedSatellite();
+    if (projectedSatellite) return projectedSatellite;
     const markerHit = this.raycaster.intersectObjects(this.earth.markers, false)[0];
     if (markerHit?.object.userData.owner) return markerHit.object.userData.owner;
 
@@ -303,6 +315,42 @@ export class Viewer {
       return orbitHit.object.userData.owner;
     }
     return null;
+  }
+
+  /**
+   * Резервный выбор по экранному центру аппарата.
+   *
+   * Он не зависит от broad-phase InstancedMesh и сохраняет удобную область
+   * 16–22 px даже в небольшом окне. Аппараты за Землёй исключаются.
+   */
+  pickProjectedSatellite() {
+    if (!this.model || !this.bundle) return null;
+    this.world.updateMatrixWorld(true);
+    this.camera.updateMatrixWorld(true);
+    const width = Math.max(1, this.canvas.clientWidth);
+    const height = Math.max(1, this.canvas.clientHeight);
+    const radius = Math.max(16, Math.min(22, width * 0.016));
+    const stage = this.bundle.design.launch_stage;
+    let best = null;
+    let bestDistance = radius;
+
+    for (let index = 0; index < this.bundle.satellites.length; index += 1) {
+      const satellite = this.bundle.satellites[index];
+      if (satellite.launch_batch > stage) continue;
+      const [x, y, z] = toSceneTriple(this.model.positions, index);
+      this.pickWorld.set(x, y, z).applyMatrix4(this.world.matrixWorld);
+      if (occludedByEarth(this.camera.position, this.pickWorld)) continue;
+      this.pickProjected.copy(this.pickWorld).project(this.camera);
+      if (this.pickProjected.z < -1 || this.pickProjected.z > 1) continue;
+      const dx = (this.pickProjected.x - this.pointer.x) * width / 2;
+      const dy = (this.pickProjected.y - this.pointer.y) * height / 2;
+      const distance = Math.hypot(dx, dy);
+      if (distance <= bestDistance) {
+        bestDistance = distance;
+        best = { type: "satellite", id: satellite.id };
+      }
+    }
+    return best;
   }
 }
 
@@ -332,6 +380,23 @@ function aimAt(group, point, lift) {
 
 function toSceneTriple(positions, index) {
   return toScene(positions[index * 3], positions[index * 3 + 1], positions[index * 3 + 2]);
+}
+
+function occludedByEarth(camera, target) {
+  const dx = target.x - camera.x;
+  const dy = target.y - camera.y;
+  const dz = target.z - camera.z;
+  const lengthSquared = dx * dx + dy * dy + dz * dz;
+  if (lengthSquared <= 1e-12) return false;
+  const projection = Math.max(
+    0,
+    Math.min(1, -(camera.x * dx + camera.y * dy + camera.z * dz) / lengthSquared)
+  );
+  if (projection <= 0 || projection >= 0.999) return false;
+  const closestX = camera.x + projection * dx;
+  const closestY = camera.y + projection * dy;
+  const closestZ = camera.z + projection * dz;
+  return closestX * closestX + closestY * closestY + closestZ * closestZ < 0.985 ** 2;
 }
 
 const VISIBILITY_ORIGIN = new THREE.Vector3();

@@ -176,6 +176,11 @@ export class Constellation {
     this.bus.instanceMatrix.needsUpdate = true;
     this.panels.instanceMatrix.needsUpdate = true;
     this.picker.instanceMatrix.needsUpdate = true;
+    // InstancedMesh кэширует общую bounding sphere после первого raycast.
+    // Матрицы аппаратов меняются каждый кадр, поэтому старый объём мог целиком
+    // отбрасываться raycaster'ом и спутники переставали быть кликабельными.
+    this.picker.boundingSphere = null;
+    this.picker.computeBoundingSphere();
     if (this.bus.instanceColor) this.bus.instanceColor.needsUpdate = true;
   }
 
