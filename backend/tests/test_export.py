@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import math
 
 from polaris.domain.constants import RESULT_SCHEMA_VERSION
 from polaris.domain.engine import compute_run
 from polaris.domain.scenario import parse_scenario
-from polaris.domain.serialize import export_result, pack_bundle
+from polaris.domain.serialize import export_result, export_result_csv, pack_bundle
 
 from .conftest import load_raw
 
@@ -28,6 +30,32 @@ def test_export_has_record_per_time_and_client() -> None:
 
     seen = {(row["t_s"], row["client_id"]) for row in payload["routes"]}
     assert len(seen) == expected
+    assert all(isinstance(row["t_s"], int) for row in payload["routes"])
+
+
+def test_csv_export_preserves_contract_and_one_row_per_pair() -> None:
+    result = build()
+    encoded = export_result_csv(result)
+    assert encoded.startswith("\ufeff")
+
+    rows = list(csv.DictReader(io.StringIO(encoded.removeprefix("\ufeff"))))
+    expected = result.topology.step_count * len(result.scenario.clients)
+    assert len(rows) == expected
+    assert set(rows[0]) == {
+        "schema_version",
+        "effective_scenario",
+        "t_s",
+        "client_id",
+        "path",
+    }
+    assert rows[0]["schema_version"] == RESULT_SCHEMA_VERSION
+    restored = parse_scenario(json.loads(rows[0]["effective_scenario"]))
+    assert restored.content_hash() == result.scenario.content_hash()
+    assert all(not row["schema_version"] and not row["effective_scenario"] for row in rows[1:])
+
+    pairs = {(int(row["t_s"]), row["client_id"]) for row in rows}
+    assert len(pairs) == expected
+    assert all(isinstance(json.loads(row["path"]), list) for row in rows)
 
 
 def test_export_paths_start_at_client_and_end_at_gateway() -> None:

@@ -25,7 +25,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path, { method = "GET", body, signal, timeout = 120000 } = {}) {
+async function request(path, { method = "GET", body, signal, timeout = 120000, responseType = "json" } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   if (signal) signal.addEventListener("abort", () => controller.abort(), { once: true });
@@ -70,7 +70,7 @@ async function request(path, { method = "GET", body, signal, timeout = 120000 } 
       details: payload?.details || [],
     });
   }
-  return payload;
+  return responseType === "text" ? text : payload;
 }
 
 export const api = {
@@ -83,6 +83,7 @@ export const api = {
   snapshotUrl: (runId, t) => `${BASE}/runs/${runId}/snapshot?t_s=${t}`,
   coverage: (runId) => request(`/runs/${encodeURIComponent(runId)}/coverage`),
   exportRun: (runId) => request(`/runs/${encodeURIComponent(runId)}/export`),
+  exportRunCsv: (runId) => request(`/runs/${encodeURIComponent(runId)}/export.csv`, { responseType: "text" }),
 
   variants: () => request("/variants"),
   saveVariant: (payload) => request("/variants", { method: "POST", body: payload }),

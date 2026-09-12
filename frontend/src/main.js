@@ -8,6 +8,7 @@
  */
 
 import { ApiError, api, awaitJob } from "./api.js";
+import { scenarioFromResultCsv } from "./csv.js";
 import { clone, currentStep, notify, setState, state, subscribe } from "./state.js";
 import { Bundle } from "./model/bundle.js";
 import { Viewer } from "./scene/viewer.js";
@@ -336,8 +337,12 @@ function requestVariantName(suggested) {
 }
 
 function downloadJson(payload, filename) {
+  downloadText(JSON.stringify(payload, null, 2), filename, "application/json;charset=utf-8");
+}
+
+function downloadText(content, filename, type = "text/plain;charset=utf-8") {
   const safeName = filename.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").slice(0, 140);
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -648,9 +653,10 @@ function bindControls() {
     }
     event.currentTarget.disabled = true;
     try {
-      const payload = await api.exportRun(state.bundle.runId);
-      downloadJson(payload, `${state.projectTitle}-result.json`);
-      toast("Результат экспортирован в формате cosmo-A-result-1.0", "ok");
+      const csv = await api.exportRunCsv(state.bundle.runId);
+      const excelCsv = csv.startsWith("\uFEFF") ? csv : `\uFEFF${csv}`;
+      downloadText(excelCsv, `${state.projectTitle}-result.csv`, "text/csv;charset=utf-8");
+      toast("CSV экспортирован: одна строка на каждый момент и наземный пункт", "ok");
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
         toast("Расчёт больше не доступен. Нажмите «Пересчитать» и повторите экспорт.", "warn");
@@ -791,12 +797,19 @@ function bindControls() {
       }
     },
     loadFile: async (file) => {
+      const csvFile = file.name.toLowerCase().endsWith(".csv") || file.type === "text/csv";
       try {
         const text = await file.text();
-        const payload = JSON.parse(text);
-        const scenario = scenarioFromImportedJson(payload);
+        const scenario = csvFile
+          ? scenarioFromResultCsv(text)
+          : scenarioFromImportedJson(JSON.parse(text));
         if (!scenario) {
-          toast("JSON не содержит сценарий схемы cosmo-A-1.0", "error");
+          toast(
+            csvFile
+              ? "CSV не содержит результат POLARIS с полным effective_scenario"
+              : "JSON не содержит сценарий схемы cosmo-A-1.0",
+            "error"
+          );
           return;
         }
         const check = await api.validate(scenario);
@@ -810,7 +823,7 @@ function bindControls() {
         toast(`Сценарий «${file.name}» загружен и рассчитан`, "ok");
       } catch (error) {
         if (error instanceof SyntaxError) {
-          toast("Файл не является корректным JSON", "error");
+          toast(csvFile ? "Файл не является корректным CSV POLARIS" : "Файл не является корректным JSON", "error");
           return;
         }
         reportError(error);

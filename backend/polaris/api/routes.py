@@ -13,7 +13,7 @@ from ..domain.coverage import coverage_grid
 from ..domain.engine import RunOptions, snapshot
 from ..domain.routing import CAUSE_LABELS, STRATEGY_LABELS, GapCause, LinkState, Strategy
 from ..domain.scenario import ScenarioValidationError
-from ..domain.serialize import export_result
+from ..domain.serialize import export_result, export_result_csv
 from ..research.engine import ResearchOptions, run_research
 from ..research.profiles import profile_catalog
 from .jobs import Job, progress_reporter
@@ -174,6 +174,25 @@ def export_run(run_id: str) -> Response:
     return _json(payload, filename=f"{title}-result.json", pretty=True)
 
 
+@router.get("/runs/{run_id}/export.csv")
+def export_run_csv(run_id: str) -> Response:
+    """Скачать маршруты таблицей, сохранив полный сценарий для обратного импорта."""
+    entry = runs.get(run_id)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Расчёт не найден: вероятно, он вытеснен из кэша. Запустите расчёт заново.",
+        )
+    result, _ = entry
+    title = result.scenario.meta.get("id") or "polaris"
+    headers = {"Content-Disposition": f'attachment; filename="{title}-result.csv"'}
+    return Response(
+        content=export_result_csv(result).encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers=headers,
+    )
+
+
 @router.get("/runs/{run_id}/snapshot")
 def run_snapshot(run_id: str, t_s: float = Query(default=0.0, ge=0.0)) -> Response:
     """Состояние сети в момент ``t_s`` в формате эталонного модуля geometry.py."""
@@ -281,11 +300,25 @@ def compare_multiple(request: MultiCompareRequest) -> Response:
 
     options = _options(request.options)
     rows: list[dict[str, Any]] = []
+    scenarios: list[tuple[str, dict[str, Any]]] = []
+    reference_grid: tuple[int, int] | None = None
     for variant_id in request.variant_ids:
         saved = variants.get(variant_id)
         if saved is None:
             raise HTTPException(status_code=404, detail=f"Вариант «{variant_id}» не найден")
         scenario = load_scenario(saved["scenario"])
+        grid = (scenario.environment.horizon_s, scenario.environment.step_s)
+        if reference_grid is None:
+            reference_grid = grid
+        elif grid != reference_grid:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Для корректного сравнения у вариантов должны совпадать "
+                    "horizon_s и step_s. Выполните их на одной сетке времени."
+                ),
+            )
+        scenarios.append((variant_id, scenario.to_dict()))
         _, bundle = runs.run(scenario, options)
         summary = bundle["summary"]
         rows.append(
@@ -318,8 +351,53 @@ def compare_multiple(request: MultiCompareRequest) -> Response:
             "recommended_id": recommended["id"],
             "recommended_label": recommended["label"],
             "strategy": request.options.strategy,
+            "parameter_rows": _multi_parameter_rows(scenarios),
         }
     )
+
+
+def _multi_parameter_rows(
+    scenarios: list[tuple[str, dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """Матрица только тех входных параметров, которые различаются у 2–5 вариантов."""
+    specs: list[tuple[str, str, Any]] = [
+        ("environment.altitude_km", "Высота орбиты, км", lambda s: s["environment"]["altitude_km"]),
+        ("environment.inclination_deg", "Наклонение, °", lambda s: s["environment"]["inclination_deg"]),
+        ("environment.earth_angle0_deg", "Начальный угол Земли, °", lambda s: s["environment"]["earth_angle0_deg"]),
+        ("environment.min_elevation_deg", "Мин. угол возвышения, °", lambda s: s["environment"]["min_elevation_deg"]),
+        ("environment.isl_range_km", "Дальность ISL, км", lambda s: s["environment"]["isl_range_km"]),
+        ("environment.target_availability", "Целевая доступность, доля", lambda s: s["environment"]["target_availability"]),
+        ("design.launch_stage", "Этап развёртывания", lambda s: s["design"]["launch_stage"]),
+        ("failures", "Недоступность спутников", lambda s: s["failures"]),
+        ("gateway_outages", "Недоступность шлюзов", lambda s: s["gateway_outages"]),
+    ]
+
+    plane_ids = sorted(
+        {plane["id"] for _, scenario in scenarios for plane in scenario["design"]["planes"]}
+    )
+    for plane_id in plane_ids:
+        for key, label in (("raan_deg", "RAAN"), ("phase_deg", "Фазирование")):
+            def plane_value(scenario: dict[str, Any], pid: str = plane_id, field: str = key) -> Any:
+                plane = next(
+                    (item for item in scenario["design"]["planes"] if item["id"] == pid),
+                    None,
+                )
+                return plane[field] if plane is not None else None
+
+            specs.append(
+                (f"design.planes.{plane_id}.{key}", f"{label} {plane_id}, °", plane_value)
+            )
+
+    rows: list[dict[str, Any]] = []
+    for field, label, getter in specs:
+        values = {variant_id: getter(scenario) for variant_id, scenario in scenarios}
+        signatures = {
+            json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            for value in values.values()
+        }
+        if len(signatures) > 1:
+            rows.append({"field": field, "label": label, "values": values})
+    return rows
 
 
 def _resolve_scenario(

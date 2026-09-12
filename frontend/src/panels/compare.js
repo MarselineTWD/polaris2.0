@@ -55,6 +55,7 @@ function variantListMarkup(variants) {
 
 function comparisonMarkup(comparison) {
   const variants = comparison.variants || [];
+  const parameterRows = comparison.parameter_rows || [];
   const metricRows = [
     ["Минимальная доступность", (item) => percent(item.min_availability_pct)],
     ["Средняя доступность", (item) => percent(item.mean_availability_pct)],
@@ -76,6 +77,14 @@ function comparisonMarkup(comparison) {
       </table></div>
     </div>
     <div class="section-block">
+      <h3>Что изменено в вариантах</h3>
+      <p class="lead">Показаны только различающиеся входные параметры. Так результат можно связать с конкретным проектным решением.</p>
+      ${parameterRows.length ? `<div class="table-scroll"><table class="data-table multi-compare-table parameter-compare-table">
+        <thead><tr><th>Параметр</th>${variants.map((item) => `<th>${escapeHtml(item.label)}</th>`).join("")}</tr></thead>
+        <tbody>${parameterRows.map((row) => `<tr><td>${escapeHtml(row.label)}</td>${variants.map((item) => `<td>${parameterValue(row.values?.[item.id])}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table></div>` : `<div class="empty-state">Входные параметры выбранных вариантов совпадают</div>`}
+    </div>
+    <div class="section-block">
       <h3>Доступность по наземным пунктам</h3>
       <p class="lead">В ячейке показаны доступность и максимальный непрерывный перерыв.</p>
       <div class="table-scroll"><table class="data-table multi-compare-table">
@@ -86,6 +95,19 @@ function comparisonMarkup(comparison) {
         }).join("")}</tr>`).join("")}</tbody>
       </table></div>
     </div>`;
+}
+
+function parameterValue(value) {
+  if (Array.isArray(value)) {
+    if (!value.length) return `<span class="muted">нет</span>`;
+    const details = value.map((item) => {
+      const target = item.satellite_id || item.gateway_id || "объект";
+      return `${target}: ${item.start_s}–${item.end_s} с`;
+    });
+    return `<details class="parameter-details"><summary>${value.length} ${value.length === 1 ? "интервал" : "интервалов"}</summary><span>${details.map(escapeHtml).join("<br>")}</span></details>`;
+  }
+  if (value == null) return `<span class="muted">нет</span>`;
+  return escapeHtml(String(value));
 }
 
 function bind() {

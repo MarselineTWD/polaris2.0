@@ -491,6 +491,9 @@ body.resizing-inspector { cursor: ew-resize; user-select: none; }
 .multi-compare-table th:not(:first-child), .multi-compare-table td:not(:first-child) { text-align: center; }
 .multi-compare-table .winner { background: rgba(84,239,199,.06); color: var(--accent); }
 .multi-compare-table td small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
+.parameter-compare-table td { vertical-align: top; }
+.parameter-details summary { color: #c9d8e9; cursor: pointer; }
+.parameter-details span { display: block; min-width: 150px; margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.55; }
 #compare-modal .modal-panel { width: min(1180px, 97vw); }
 
 /* Блокирующий индикатор долгих операций. */

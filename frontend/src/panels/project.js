@@ -45,9 +45,9 @@ export function renderProject(state) {
     ${fieldErrorsMarkup(problems)}
 
     <label class="upload-zone" for="scenario-file">
-      <strong>Импортировать JSON</strong>
-      <span>Сценарий или экспорт Polaris · конфигурация будет извлечена автоматически</span>
-      <input id="scenario-file" type="file" accept=".json,application/json" />
+      <strong>Импортировать JSON или CSV</strong>
+      <span>Сценарий или экспорт POLARIS · конфигурация будет извлечена автоматически</span>
+      <input id="scenario-file" type="file" accept=".json,.csv,application/json,text/csv" />
     </label>
 
     <label class="field"><span>Встроенный сценарий</span>

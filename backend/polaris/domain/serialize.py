@@ -13,6 +13,9 @@
 from __future__ import annotations
 
 import base64
+import csv
+import io
+import json
 from typing import Any
 
 import numpy as np
@@ -191,7 +194,7 @@ def export_result(result: RunResult) -> dict[str, Any]:
                     gateways[gateway_index].id,
                 ]
             routes.append(
-                {"t_s": float(times[step]), "client_id": client_id, "path": path}
+                {"t_s": int(times[step]), "client_id": client_id, "path": path}
             )
 
     return {
@@ -215,3 +218,38 @@ def export_result(result: RunResult) -> dict[str, Any]:
             },
         },
     }
+
+
+def export_result_csv(result: RunResult) -> str:
+    """Табличное представление обязательной схемы результата.
+
+    Одна строка CSV соответствует одной паре «момент расчёта — клиент». Полный
+    ``effective_scenario`` и версия схемы записываются в первую строку, чтобы не
+    раздувать файл тысячами одинаковых копий. Канонический JSON endpoint остаётся
+    доступен, а CSV можно однозначно импортировать обратно в интерфейс.
+    """
+    payload = export_result(result)
+    output = io.StringIO(newline="")
+    fieldnames = ["schema_version", "effective_scenario", "t_s", "client_id", "path"]
+    writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\r\n")
+    writer.writeheader()
+
+    scenario_json = json.dumps(
+        payload["effective_scenario"],
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+    )
+    for index, route in enumerate(payload["routes"]):
+        writer.writerow(
+            {
+                "schema_version": payload["schema_version"] if index == 0 else "",
+                "effective_scenario": scenario_json if index == 0 else "",
+                "t_s": route["t_s"],
+                "client_id": route["client_id"],
+                "path": json.dumps(route["path"], ensure_ascii=False, separators=(",", ":")),
+            }
+        )
+
+    # BOM помогает Excel корректно распознать UTF-8 и русские названия.
+    return "\ufeff" + output.getvalue()

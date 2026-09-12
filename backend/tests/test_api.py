@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import copy
+import csv
+import io
+import json
 import time
 
 import pytest
@@ -124,6 +127,20 @@ def test_export_downloads_result_schema(client: TestClient, payload: dict) -> No
     assert len(body["routes"]) == 720 * 3
 
 
+def test_export_downloads_csv_with_full_scenario(client: TestClient, payload: dict) -> None:
+    run_id = client.post("/api/runs", json={"scenario": payload}).json()["run_id"]
+    response = client.get(f"/api/runs/{run_id}/export.csv")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert response.headers["content-disposition"].endswith('-result.csv"')
+    assert response.content.startswith(b"\xef\xbb\xbf")
+
+    rows = list(csv.DictReader(io.StringIO(response.content.decode("utf-8-sig"))))
+    assert len(rows) == 720 * 3
+    assert rows[0]["schema_version"] == "cosmo-A-result-1.0"
+    assert json.loads(rows[0]["effective_scenario"])["schema_version"] == "cosmo-A-1.0"
+
+
 def test_variant_save_list_and_compare(client: TestClient, payload: dict) -> None:
     first = client.post(
         "/api/variants", json={"label": "Полная группировка", "scenario": payload}
@@ -133,6 +150,8 @@ def test_variant_save_list_and_compare(client: TestClient, payload: dict) -> Non
 
     staged = copy.deepcopy(payload)
     staged["design"]["launch_stage"] = 1
+    staged["design"]["planes"][0]["raan_deg"] = 15
+    staged["failures"] = [{"satellite_id": "S01", "start_s": 0, "end_s": 120}]
     second = client.post("/api/variants", json={"label": "Первая очередь", "scenario": staged})
     other_id = second.json()["id"]
 
@@ -155,16 +174,37 @@ def test_variant_save_list_and_compare(client: TestClient, payload: dict) -> Non
     assert [item["id"] for item in multi_body["variants"]] == [base_id, other_id]
     assert multi_body["recommended_id"] == base_id
     assert all(len(item["clients"]) == 3 for item in multi_body["variants"])
+    changed = {item["field"] for item in multi_body["parameter_rows"]}
+    assert {"design.launch_stage", "design.planes.P1.raan_deg", "failures"} <= changed
 
     exported = client.get(f"/api/variants/{other_id}/export")
     assert exported.status_code == 200
     assert "attachment" in exported.headers["content-disposition"]
     assert exported.json()["schema_version"] == "cosmo-A-1.0"
     assert exported.json()["design"]["launch_stage"] == 1
+    assert exported.json()["design"]["planes"][0]["raan_deg"] == 15
+    assert exported.json()["failures"] == staged["failures"]
 
     client.delete(f"/api/variants/{base_id}")
     client.delete(f"/api/variants/{other_id}")
     assert client.get(f"/api/variants/{other_id}/export").status_code == 404
+
+
+def test_multi_compare_rejects_different_time_grids(client: TestClient, payload: dict) -> None:
+    first = client.post("/api/variants", json={"label": "24 часа", "scenario": payload}).json()
+    changed = copy.deepcopy(payload)
+    changed["environment"]["horizon_s"] = 43200
+    second = client.post("/api/variants", json={"label": "12 часов", "scenario": changed}).json()
+    try:
+        response = client.post(
+            "/api/compare/multiple",
+            json={"variant_ids": [first["id"], second["id"]]},
+        )
+        assert response.status_code == 422
+        assert "horizon_s и step_s" in response.json()["detail"]
+    finally:
+        client.delete(f"/api/variants/{first['id']}")
+        client.delete(f"/api/variants/{second['id']}")
 
 
 def test_strategy_comparison_endpoint(client: TestClient, payload: dict) -> None:
