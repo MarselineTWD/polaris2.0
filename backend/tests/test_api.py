@@ -88,6 +88,16 @@ def test_snapshot_matches_reference_module(client: TestClient, payload: dict) ->
     }
 
 
+def test_coverage_grid_uses_completed_run(client: TestClient, payload: dict) -> None:
+    run_id = client.post("/api/runs", json={"scenario": payload}).json()["run_id"]
+    response = client.get(f"/api/runs/{run_id}/coverage")
+    assert response.status_code == 200
+    grid = response.json()
+    assert grid["cell_deg"] == 10
+    assert len(grid["availability_pct"]) == len(grid["latitudes"]) * len(grid["longitudes"])
+    assert 0 <= grid["minimum_pct"] <= grid["mean_pct"] <= grid["maximum_pct"] <= 100
+
+
 def test_export_downloads_result_schema(client: TestClient, payload: dict) -> None:
     run_id = client.post("/api/runs", json={"scenario": payload}).json()["run_id"]
     response = client.get(f"/api/runs/{run_id}/export")

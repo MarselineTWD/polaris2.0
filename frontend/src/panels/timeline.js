@@ -6,8 +6,8 @@
  * Клик по дорожке переводит время в выбранный момент.
  */
 
-import { clock, decimal, percent } from "../format.js";
-import { STATE_CLASS } from "../model/bundle.js";
+import { clock, decimal, escapeHtml, percent } from "../format.js";
+import { CAUSE_LABEL, STATE_CLASS } from "../model/bundle.js";
 import { $ } from "./shell.js";
 
 let handlers = {};
@@ -54,7 +54,11 @@ export function renderTimeline(state) {
         .map((segment) => {
           const left = (segment.start / bundle.stepCount) * 100;
           const width = ((segment.end - segment.start) / bundle.stepCount) * 100;
-          return `<i class="lane-segment ${STATE_CLASS[segment.state]}" style="left:${left}%;width:${width}%"></i>`;
+          const startSeconds = segment.start * bundle.stepSeconds;
+          const endSeconds = segment.end * bundle.stepSeconds;
+          return `<i class="lane-segment ${STATE_CLASS[segment.state]} cause-${segment.cause}"
+                    title="${escapeHtml(CAUSE_LABEL[segment.cause])}: ${clock(startSeconds)}–${clock(endSeconds)}"
+                    style="left:${left}%;width:${width}%"></i>`;
         })
         .join("");
       return `
@@ -115,9 +119,18 @@ export function updateSceneSummary(state) {
   const step = bundle.stepAt(state.timeSeconds);
   const track = bundle.track(state.clientId);
   const routed = track?.isRouted(step);
+  const visibilitySiteId = ["client", "gateway"].includes(state.selection?.type)
+    ? state.selection.id
+    : null;
+  const visibleCount = visibilitySiteId
+    ? bundle.visibleSatellites(visibilitySiteId, step).length
+    : 0;
+  const visibilityLegend = $("visibility-legend");
+  visibilityLegend.hidden = !visibilitySiteId;
   $("scene-summary").innerHTML = `
     <span><strong>${bundle.activeCounts[step]}</strong> активны</span><i></i>
     <span><strong>${bundle.linkCounts[step]}</strong> связей</span><i></i>
+    ${visibilitySiteId ? `<span><strong>${visibleCount}</strong> видно из ${escapeHtml(visibilitySiteId)}</span><i></i>` : ""}
     <span><strong>${routed ? track.hops[step] : "—"}</strong> переходов</span><i></i>
     <span><strong>${routed ? decimal(track.latencyMs[step], 1) : "—"}</strong> мс</span>`;
 }

@@ -1,4 +1,3 @@
-/* global THREE */
 /**
  * Аппараты и орбитальные кольца.
  *
@@ -7,10 +6,12 @@
  * аппарата — активен, участвует в маршруте, недоступен, ещё не выведен.
  */
 
+import * as THREE from "../../vendor/three.module.min.js";
 import { SCENE_SCALE, toScene } from "../model/orbit.js";
 
 const COLORS = {
   idle: new THREE.Color(0xc7d2df),
+  visible: new THREE.Color(0x48d7ff),
   route: new THREE.Color(0x54efc7),
   failed: new THREE.Color(0xff5d7d),
   undeployed: new THREE.Color(0x2b3545),
@@ -33,6 +34,7 @@ export class Constellation {
     this.matrix = new THREE.Matrix4();
     this.hidden = new THREE.Matrix4().makeScale(0, 0, 0);
     this.scratch = new THREE.Vector3();
+    this.orbitNormals = [];
   }
 
   /** Пересоздать инстансы под состав группировки из пакета. */
@@ -40,6 +42,20 @@ export class Constellation {
     this.dispose();
     this.count = bundle.satellites.length;
     this.bundle = bundle;
+
+    // Нормаль орбитальной плоскости всегда перпендикулярна радиус-вектору
+    // аппарата. Она даёт устойчивый локальный «верх» даже над полюсами,
+    // где мировой UP почти совпадает с направлением на центр Земли.
+    const sinI = Math.sin(model.inclination);
+    const cosI = Math.cos(model.inclination);
+    this.orbitNormals = Array.from({ length: this.count }, (_, index) => {
+      const raan = model.raan[index];
+      return new THREE.Vector3(
+        Math.sin(raan) * sinI,
+        cosI,
+        Math.cos(raan) * sinI
+      ).normalize();
+    });
 
     const body = new THREE.InstancedMesh(
       new THREE.BoxGeometry(0.03, 0.018, 0.018),
@@ -64,7 +80,7 @@ export class Constellation {
     // Отдельная невидимая сфера увеличенного радиуса: по ней работает
     // выбор мышью, иначе в аппарат почти невозможно попасть.
     const picker = new THREE.InstancedMesh(
-      new THREE.SphereGeometry(0.05, 8, 6),
+      new THREE.SphereGeometry(0.082, 10, 8),
       new THREE.MeshBasicMaterial({ visible: false }),
       this.count
     );
@@ -111,8 +127,9 @@ export class Constellation {
    * @param step      номер отсчёта расчётной сетки
    * @param routeSet  индексы аппаратов текущего маршрута
    * @param selected  индекс выделенного аппарата либо -1
+   * @param visibleFromGround аппараты, видимые из выбранного наземного пункта
    */
-  update(positions, step, routeSet, selected) {
+  update(positions, step, routeSet, selected, visibleFromGround) {
     if (!this.bus) return;
     const bundle = this.bundle;
     const stage = bundle.design.launch_stage;
@@ -137,8 +154,9 @@ export class Constellation {
 
       this.scratch.set(x, y, z);
       this.matrix.makeTranslation(x, y, z);
-      // Разворачиваем корпус «лицом» к Земле — так аппарат читается как аппарат.
-      ORIENTATION.lookAt(this.scratch, ORIGIN, UP);
+      // Корпус смотрит на Землю, а крен фиксируется нормалью его орбиты.
+      // В отличие от мирового UP такая система не вырождается у полюсов.
+      ORIENTATION.lookAt(this.scratch, ORIGIN, this.orbitNormals[index]);
       this.matrix.multiply(ORIENTATION);
 
       this.bus.setMatrixAt(index, this.matrix);
@@ -151,6 +169,7 @@ export class Constellation {
       if (index === selected) color = COLORS.selected;
       else if (!active) color = COLORS.failed;
       else if (routeSet.has(index)) color = COLORS.route;
+      else if (visibleFromGround.has(index)) color = COLORS.visible;
       this.bus.setColorAt(index, color);
     }
 
@@ -183,10 +202,10 @@ export class Constellation {
     this.bus = null;
     this.panels = null;
     this.picker = null;
+    this.orbitNormals = [];
   }
 }
 
 const ORIGIN = new THREE.Vector3(0, 0, 0);
-const UP = new THREE.Vector3(0, 1, 0);
 const TEMP = new THREE.Matrix4();
 const ORIENTATION = new THREE.Matrix4();

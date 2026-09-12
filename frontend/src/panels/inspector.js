@@ -7,7 +7,7 @@
 
 import { clock, coordinates, decimal, duration, escapeHtml, percent } from "../format.js";
 import { CAUSE_LABEL, CAUSE_LABEL_BY_NAME, STATE } from "../model/bundle.js";
-import { $ } from "./shell.js";
+import { $, plural } from "./shell.js";
 
 let handlers = {};
 
@@ -46,8 +46,14 @@ function bindActions(host, state) {
   host.querySelector("[data-action=focus]")?.addEventListener("click", (event) =>
     handlers.focus?.(event.currentTarget.dataset.ownerType, event.currentTarget.dataset.ownerId)
   );
+  host.querySelector("[data-action=track]")?.addEventListener("click", (event) =>
+    handlers.trackSatellite?.(event.currentTarget.dataset.satellite)
+  );
   host.querySelector("[data-action=edit-plane]")?.addEventListener("click", () =>
     handlers.editProject?.()
+  );
+  host.querySelectorAll("[data-gap-time]").forEach((button) =>
+    button.addEventListener("click", () => handlers.setTime?.(Number(button.dataset.gapTime)))
   );
 }
 
@@ -98,6 +104,8 @@ function clientMarkup(bundle, clientId, step) {
       }
     </section>
 
+    ${gapListMarkup(metrics)}
+
     <section class="compact-section">
       <h3>Показатели за период</h3>
       <div class="detail-list">
@@ -113,6 +121,27 @@ function clientMarkup(bundle, clientId, step) {
 
     ${causeSummary(bundle, metrics)}
     <p class="hint-note">Нажмите на аппарат маршрута, чтобы посмотреть его параметры или задать период недоступности.</p>`;
+}
+
+function gapListMarkup(metrics) {
+  const gaps = metrics.gaps || [];
+  if (!gaps.length) {
+    return `<section class="compact-section"><h3>Перерывы связи</h3>
+      <div class="no-gaps">За расчётный период перерывов нет</div></section>`;
+  }
+  return `<section class="compact-section gap-section">
+    <h3>${gaps.length} ${plural(gaps.length, "перерыв", "перерыва", "перерывов")} связи</h3>
+    <div class="gap-list">${gaps
+      .map(
+        (gap, index) => `<article class="gap-item cause-${gap.cause}">
+          <div><strong>${index + 1}. ${clock(gap.start_s, true)}–${clock(gap.end_s, true)}</strong>
+            <span>${escapeHtml(gap.cause_label)} · ${duration(gap.duration_s)}</span></div>
+          <button class="mini-action" type="button" data-gap-time="${gap.start_s}"
+                  title="Перейти к началу перерыва">Показать</button>
+        </article>`
+      )
+      .join("")}</div>
+  </section>`;
 }
 
 function gapDetail(bundle, track, step, required) {
@@ -169,6 +198,7 @@ function satelliteMarkup(bundle, satelliteId, step, state) {
   const deployed = satellite.launch_batch <= bundle.design.launch_stage;
   const active = bundle.isActive(step, index);
   const status = !deployed ? "Ещё не выведен" : active ? "Активен" : "Недоступен";
+  const isTracked = state.trackedSatelliteId === satelliteId;
 
   const track = bundle.track(state.clientId);
   const inRoute = track?.isRouted(step) && track.path(step).includes(index);
@@ -192,8 +222,9 @@ function satelliteMarkup(bundle, satelliteId, step, state) {
               data-action="fail" data-satellite="${escapeHtml(satellite.id)}" type="button">
         ${declaredOutage.length ? "Убрать отказ" : "Задать отказ"}
       </button>
-      <button class="button button-subtle" data-action="focus" data-owner-type="satellite"
-              data-owner-id="${escapeHtml(satellite.id)}" type="button">Показать</button>
+      <button class="button button-subtle ${isTracked ? "active" : ""}"
+              data-action="track" data-satellite="${escapeHtml(satellite.id)}" type="button"
+              aria-pressed="${isTracked}">${isTracked ? "Остановить слежение" : "Отслеживать"}</button>
     </div>
 
     <section class="compact-section"><h3>Параметры</h3><div class="detail-list">

@@ -1,4 +1,3 @@
-/* global THREE */
 /**
  * Земля, атмосфера, звёзды и наземные пункты.
  *
@@ -8,17 +7,21 @@
  * в зоне радиовидимости, посчитанной ядром.
  */
 
+import * as THREE from "../../vendor/three.module.min.js";
 import { groundToScene } from "../model/orbit.js";
 
 const CLIENT_COLOR = 0x54efc7;
 const GATEWAY_COLOR = 0xffc75c;
 
 export class Earth {
-  constructor(parent) {
+  constructor(parent, { onAssetsReady, onAssetError } = {}) {
     this.group = new THREE.Group();
     parent.add(this.group);
 
-    const loader = new THREE.TextureLoader();
+    const manager = new THREE.LoadingManager();
+    manager.onLoad = () => onAssetsReady?.();
+    manager.onError = (url) => onAssetError?.(url);
+    const loader = new THREE.TextureLoader(manager);
     const day = loader.load("./assets/earth-day.jpg");
     day.colorSpace = THREE.SRGBColorSpace;
     day.anisotropy = 4;
@@ -26,6 +29,7 @@ export class Earth {
     this.globe = new THREE.Mesh(
       new THREE.SphereGeometry(1, 96, 64),
       new THREE.MeshPhongMaterial({
+        color: 0xb9d5ef,
         map: day,
         normalMap: loader.load("./assets/earth-normal.jpg"),
         normalScale: new THREE.Vector2(0.55, 0.55),

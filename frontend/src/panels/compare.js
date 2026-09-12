@@ -20,6 +20,9 @@ export function initCompare(callbacks) {
 export function renderCompare(state, comparison) {
   const host = $("compare-content");
   const variants = state.variants;
+  const ids = new Set(variants.map((variant) => variant.id));
+  if (!ids.has(selection.base)) selection.base = null;
+  if (!ids.has(selection.other)) selection.other = null;
 
   if (variants.length < 2) {
     host.innerHTML = `

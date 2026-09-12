@@ -1,4 +1,3 @@
-/* global THREE */
 /**
  * 3D-вид: сборка сцены, управление камерой и выбор объектов.
  *
@@ -6,6 +5,7 @@
  * текущий выбор, а наружу сообщает, по какому объекту кликнули.
  */
 
+import * as THREE from "../../vendor/three.module.min.js";
 import { Earth, createStarfield } from "./earth.js";
 import { Constellation } from "./constellation.js";
 import { Network } from "./network.js";
@@ -15,10 +15,11 @@ const HOME_CAMERA = new THREE.Vector3(0.2, 0.35, 5.15);
 const HOME_ROTATION = { x: -0.12, y: -0.28 };
 
 export class Viewer {
-  constructor(canvas, { onPick, onHover } = {}) {
+  constructor(canvas, { onPick, onHover, onCameraControl, onAssetsReady, onAssetError } = {}) {
     this.canvas = canvas;
     this.onPick = onPick;
     this.onHover = onHover;
+    this.onCameraControl = onCameraControl;
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -56,13 +57,16 @@ export class Viewer {
     rim.position.set(-3.4, -1.4, -2.6);
     this.scene.add(rim);
 
-    this.earth = new Earth(this.world);
+    this.earth = new Earth(this.world, { onAssetsReady, onAssetError });
     this.constellation = new Constellation(this.world);
     this.network = null;
     this.model = null;
     this.bundle = null;
 
     this.raycaster = new THREE.Raycaster();
+    // У линий Three.js по умолчанию огромный порог выбора (1 единица сцены),
+    // поэтому орбитальная плоскость перехватывала наведение почти везде.
+    this.raycaster.params.Line.threshold = 0.018;
     this.pointer = new THREE.Vector2();
     this.scratch = new THREE.Vector3();
     this.routeNodes = [];
@@ -78,10 +82,11 @@ export class Viewer {
     this.constellation.build(bundle, this.model);
     if (this.network) {
       this.world.remove(this.network.links);
+      this.world.remove(this.network.groundVisibility);
       this.world.remove(this.network.route);
       this.world.remove(this.network.routeGlow);
     }
-    this.network = new Network(this.world, bundle.pairCount);
+    this.network = new Network(this.world, bundle.pairCount, bundle.satelliteCount);
   }
 
   /**
@@ -92,15 +97,38 @@ export class Viewer {
    * @param options.routeIndices  индексы аппаратов маршрута
    * @param options.routeSites    идентификаторы наземных узлов маршрута
    */
-  render({ seconds, step, routeIndices, routeSites, selectedIndex, showLinks, showOrbits, showRoute }) {
+  render({
+    seconds,
+    step,
+    routeIndices,
+    routeSites,
+    selectedIndex,
+    trackedIndex,
+    visibilitySiteId,
+    visibleIndices,
+    showLinks,
+    showOrbits,
+    showRoute,
+  }) {
     if (!this.bundle || !this.model) return;
 
     const positions = this.model.propagate(seconds);
     this.headlight.position.copy(this.camera.position);
     this.earth.setAngle(this.model.earthAngle(seconds));
     this.constellation.setOrbitsVisible(showOrbits);
-    this.constellation.update(positions, step, routeIndices, selectedIndex);
+    this.constellation.update(positions, step, routeIndices, selectedIndex, visibleIndices);
     this.network.updateLinks(this.bundle, step, positions, showLinks);
+
+    const visibilityOrigin = visibilitySiteId
+      ? this.earth.sitePosition(visibilitySiteId, VISIBILITY_ORIGIN)
+      : null;
+    this.network.updateGroundVisibility(visibilityOrigin, visibleIndices, positions);
+
+    if (trackedIndex >= 0) {
+      const [x, y, z] = toSceneTriple(positions, trackedIndex);
+      this.scratch.set(x, y, z);
+      aimAt(this.world, this.scratch, 1);
+    }
 
     this.routeNodes.length = 0;
     if (routeSites.length) {
@@ -198,7 +226,10 @@ export class Viewer {
     this.canvas.addEventListener("pointermove", (event) => {
       if (start) {
         const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
-        if (moved > 4) dragging = true;
+        if (moved > 4 && !dragging) {
+          dragging = true;
+          if (this.onCameraControl) this.onCameraControl();
+        }
         if (dragging) {
           this.world.rotation.y += (event.clientX - previous.x) * 0.005;
           this.world.rotation.x = Math.max(
@@ -232,6 +263,12 @@ export class Viewer {
       dragging = false;
     });
 
+    this.canvas.addEventListener("pointerleave", (event) => {
+      start = null;
+      dragging = false;
+      if (this.onHover) this.onHover(null, event);
+    });
+
     this.canvas.addEventListener(
       "wheel",
       (event) => {
@@ -248,14 +285,22 @@ export class Viewer {
   pick() {
     if (!this.bundle) return null;
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const targets = [...this.constellation.pickTargets(), ...this.earth.markers];
-    const hits = this.raycaster.intersectObjects(targets, false);
-    for (const hit of hits) {
-      if (hit.object === this.constellation.picker) {
-        const owner = this.constellation.ownerForInstance(hit.instanceId);
+
+    // Сначала интерактивные объекты, затем орбиты. Иначе тонкая, но очень
+    // длинная линия плоскости оказывается ближе к камере и забирает событие.
+    if (this.constellation.picker) {
+      const satelliteHit = this.raycaster.intersectObject(this.constellation.picker, false)[0];
+      if (satelliteHit) {
+        const owner = this.constellation.ownerForInstance(satelliteHit.instanceId);
         if (owner) return owner;
       }
-      if (hit.object.userData.owner) return hit.object.userData.owner;
+    }
+    const markerHit = this.raycaster.intersectObjects(this.earth.markers, false)[0];
+    if (markerHit?.object.userData.owner) return markerHit.object.userData.owner;
+
+    const orbitHit = this.raycaster.intersectObjects(this.constellation.orbits.children, false)[0];
+    if (orbitHit?.object.userData.owner) {
+      return orbitHit.object.userData.owner;
     }
     return null;
   }
@@ -288,3 +333,5 @@ function aimAt(group, point, lift) {
 function toSceneTriple(positions, index) {
   return toScene(positions[index * 3], positions[index * 3 + 1], positions[index * 3 + 2]);
 }
+
+const VISIBILITY_ORIGIN = new THREE.Vector3();

@@ -60,7 +60,7 @@ export function fieldErrorsMarkup(problems) {
 }
 
 /** Русское склонение после числительного. */
-function plural(count, one, few, many) {
+export function plural(count, one, few, many) {
   const tens = count % 100;
   if (tens >= 11 && tens <= 14) return many;
   const units = count % 10;

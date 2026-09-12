@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#050914" />
   <title>POLARIS — проектирование устойчивой спутниковой группировки</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="preload" href="assets/earth-day.jpg" as="image" type="image/jpeg" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -25,6 +27,7 @@
       <div class="top-actions">
         <button class="button button-subtle" id="project-button" type="button"><b aria-hidden="true">⚙</b><span>Проект</span></button>
         <button class="button button-subtle" id="analysis-button" type="button"><b aria-hidden="true">◎</b><span>Анализ</span></button>
+        <button class="button button-subtle" id="coverage-button" type="button"><b aria-hidden="true">▦</b><span>Карта</span></button>
         <button class="button button-subtle" id="compare-button" type="button"><b aria-hidden="true">⇄</b><span>Сравнить</span></button>
         <button class="button button-subtle" id="export-button" type="button"><b aria-hidden="true">↓</b><span>Экспорт</span></button>
         <button class="button button-primary" id="calculate-button" type="button"><b aria-hidden="true">▶</b><span>Пересчитать</span></button>
@@ -35,6 +38,10 @@
       <main class="main-column">
         <section class="space-view" id="space-view">
           <canvas id="space-canvas" aria-label="Интерактивная схема Земли и спутниковой группировки"></canvas>
+          <div class="scene-loading" id="scene-loading" role="status">
+            <span class="loading-planet" aria-hidden="true"></span>
+            <div><strong>Готовим модель Земли</strong><small>Загружаем текстуры и расчётный сценарий</small></div>
+          </div>
           <div class="webgl-error" id="webgl-error" hidden></div>
           <div class="object-tooltip" id="object-tooltip" hidden></div>
 
@@ -61,12 +68,13 @@
 
           <div class="scene-legend">
             <span><i class="legend-dot active-sat"></i>Активен</span>
+            <span id="visibility-legend" hidden><i class="legend-dot visible-sat"></i>Виден из выбранной точки</span>
             <span><i class="legend-dot route-sat"></i>В маршруте</span>
             <span><i class="legend-dot failed-sat"></i>Недоступен</span>
             <span><i class="legend-line"></i>Маршрут</span>
           </div>
 
-          <div class="scene-hint">Перетащите Землю · колесо — масштаб · нажмите на аппарат или пункт</div>
+          <div class="scene-hint">Пробел — пуск · ←/→ — шаг · N — следующий перерыв · 1/2/3 — этап</div>
         </section>
 
         <section class="timeline-panel">
@@ -96,13 +104,15 @@
           <div class="availability-lanes" id="availability-lanes"></div>
           <div class="timeline-legend">
             <span><i class="available"></i>Маршрут доступен</span>
-            <span><i class="degraded"></i>Есть покрытие, но нет пути</span>
-            <span><i class="outage"></i>Нет покрытия</span>
+            <span><i class="cause-no-satellite"></i>Нет спутника</span>
+            <span><i class="cause-gateway-offline"></i>Шлюз недоступен</span>
+            <span><i class="cause-no-gateway"></i>Нет контакта со шлюзом</span>
+            <span><i class="cause-network-split"></i>Разрыв сети</span>
           </div>
         </section>
       </main>
 
-      <aside class="inspector" id="inspector" aria-live="polite">
+      <aside class="inspector" id="inspector">
         <div id="selection-content"></div>
       </aside>
     </div>
@@ -142,6 +152,30 @@
     </section>
   </div>
 
+  <div class="modal-backdrop" id="coverage-modal" aria-hidden="true">
+    <section class="modal-panel coverage-panel" role="dialog" aria-modal="true" aria-labelledby="coverage-title">
+      <div class="drawer-header">
+        <div><span>ГЕОГРАФИЯ ПОКРЫТИЯ</span><h2 id="coverage-title">Доступность маршрута по широтам</h2></div>
+        <button class="icon-button" data-close-modal="coverage-modal" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-content" id="coverage-content"></div>
+    </section>
+  </div>
+
+  <dialog class="name-dialog" id="save-variant-dialog" aria-labelledby="save-variant-title">
+    <form method="dialog">
+      <div class="dialog-eyebrow">СОХРАНЕНИЕ ВАРИАНТА</div>
+      <h2 id="save-variant-title">Название проектного решения</h2>
+      <p>Название будет показано в сравнении конфигураций.</p>
+      <label for="variant-name-input">Название</label>
+      <input id="variant-name-input" name="variant-name" maxlength="100" required autocomplete="off" />
+      <div class="dialog-actions">
+        <button class="button button-subtle" id="cancel-variant-name" type="button">Отмена</button>
+        <button class="button button-primary" value="save" type="submit">Сохранить вариант</button>
+      </div>
+    </form>
+  </dialog>
+
   <div class="toast" id="toast" role="status"></div>
   <div class="blocking-overlay" id="blocking-overlay" hidden>
     <div class="blocking-card"><div class="spinner"></div><strong id="blocking-title">Считаем…</strong><span id="blocking-detail"></span></div>
@@ -155,7 +189,6 @@
       panel.textContent = "Ошибка интерфейса: " + (event.message || "не удалось загрузить модуль");
     });
   </script>
-  <script src="vendor/three.min.js"></script>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

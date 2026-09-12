@@ -7,7 +7,6 @@ import time
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -31,15 +30,6 @@ app = FastAPI(
         "анализ устойчивости и сравнение вариантов группировки."
     ),
 )
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 
 @app.middleware("http")
 async def guard_request(request: Request, call_next: Any) -> Any:

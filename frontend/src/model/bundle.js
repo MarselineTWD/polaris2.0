@@ -141,13 +141,22 @@ class ClientTrack {
     return this.state[step] === STATE.ROUTED;
   }
 
-  /** Непрерывные отрезки одинакового состояния — для диаграммы доступности. */
+  /** Непрерывные отрезки одинакового состояния и причины — для диаграммы. */
   segments() {
     const result = [];
     let start = 0;
     for (let step = 1; step <= this.state.length; step += 1) {
-      if (step === this.state.length || this.state[step] !== this.state[start]) {
-        result.push({ start, end: step, state: this.state[start] });
+      if (
+        step === this.state.length ||
+        this.state[step] !== this.state[start] ||
+        this.cause[step] !== this.cause[start]
+      ) {
+        result.push({
+          start,
+          end: step,
+          state: this.state[start],
+          cause: this.cause[start],
+        });
         start = step;
       }
     }

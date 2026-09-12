@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 
 from ..config import settings
 from ..domain import analysis, optimizer
+from ..domain.coverage import coverage_grid
 from ..domain.engine import RunOptions, snapshot
 from ..domain.routing import CAUSE_LABELS, STRATEGY_LABELS, GapCause, LinkState, Strategy
 from ..domain.scenario import ScenarioValidationError
@@ -174,6 +175,16 @@ def run_snapshot(run_id: str, t_s: float = Query(default=0.0, ge=0.0)) -> Respon
             detail=f"Момент {t_s} с выходит за период расчёта (0…{horizon} с)",
         )
     return _json(snapshot(result.scenario, t_s))
+
+
+@router.get("/runs/{run_id}/coverage")
+def run_coverage(run_id: str) -> Response:
+    """Карта доли времени со сквозным маршрутом по сетке 10°×10°."""
+    entry = runs.get(run_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Расчёт не найден")
+    result, _ = entry
+    return _json(coverage_grid(result))
 
 
 # --------------------------------------------------------------------------- #

@@ -81,6 +81,7 @@ export const api = {
   validate: (scenario) => request("/scenarios/validate", { method: "POST", body: { scenario } }),
   run: (scenario, options) => request("/runs", { method: "POST", body: { scenario, options } }),
   snapshotUrl: (runId, t) => `${BASE}/runs/${runId}/snapshot?t_s=${t}`,
+  coverage: (runId) => request(`/runs/${encodeURIComponent(runId)}/coverage`),
   exportUrl: (runId) => `${BASE}/runs/${runId}/export`,
 
   variants: () => request("/variants"),

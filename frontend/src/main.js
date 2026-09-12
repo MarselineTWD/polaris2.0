@@ -12,17 +12,27 @@ import { clone, currentStep, notify, setState, state, subscribe } from "./state.
 import { Bundle } from "./model/bundle.js";
 import { Viewer } from "./scene/viewer.js";
 import { decimal, escapeHtml, percent } from "./format.js";
-import { $, bindOverlayDismiss, reportError, setBusy, setDrawer, setModal, toast } from "./panels/shell.js";
+import { $, bindOverlayDismiss, plural, reportError, setBusy, setDrawer, setModal, toast } from "./panels/shell.js";
 import { initInspector, renderInspector } from "./panels/inspector.js";
 import { initTimeline, renderTimeline, updateSceneSummary, updateTimeUI } from "./panels/timeline.js";
 import { initProject, renderProject, setProblems, toggleSatelliteFailure } from "./panels/project.js";
 import { initCompare, openCompare, primeSelection, renderCompare } from "./panels/compare.js";
 import { initAnalysis, openAnalysis, renderAnalysis } from "./panels/analysis.js";
+import { initCoverage, openCoverage, renderCoverage } from "./panels/coverage.js";
 
 state.presets = [];
 let viewer = null;
 let comparison = null;
 let lastFrame = performance.now();
+let visibilityCache = { bundle: null, siteId: null, step: -1, indices: new Set() };
+const initialUrlState = readUrlState();
+let urlSyncTimer = null;
+let sceneAssetsReady = false;
+let initialScenarioReady = false;
+
+function updateSceneLoading() {
+  if (sceneAssetsReady && initialScenarioReady) $("scene-loading").hidden = true;
+}
 
 // --------------------------------------------------------------------------- //
 // Расчёт
@@ -50,11 +60,14 @@ async function recompute({ silent = false, reframe = false } = {}) {
       dirty: false,
       status: "ready",
       online: true,
+      coverage: null,
       projectTitle: bundle.meta.title || bundle.meta.id || "Вариант проекта",
       timeSeconds: Math.min(state.timeSeconds, bundle.horizonSeconds - bundle.stepSeconds),
     });
 
     viewer.load(bundle);
+    initialScenarioReady = true;
+    updateSceneLoading();
     if (reframe) {
       viewer.frameGroundSegment(bundle.clients.map((site) => site.id));
     }
@@ -78,14 +91,19 @@ async function recompute({ silent = false, reframe = false } = {}) {
   }
 }
 
-async function loadScenario(payload, { presetId = null, title = null } = {}) {
-  setState({
+async function loadScenario(payload, { presetId = null, title = null, restore = null } = {}) {
+  const patch = {
     draft: clone(payload),
     presetId: presetId ?? state.presetId,
     selection: null,
-    clientId: null,
+    trackedSatelliteId: null,
+    clientId: restore?.clientId ?? null,
     analysis: { strategies: null, spof: null, optimize: null },
-  });
+  };
+  if (typeof restore?.timeSeconds === "number" && Number.isFinite(restore.timeSeconds)) {
+    patch.timeSeconds = Math.max(0, restore.timeSeconds);
+  }
+  setState(patch);
   comparison = null;
   if (title) setState({ projectTitle: title });
   await recompute({ reframe: true });
@@ -129,8 +147,8 @@ function renderHeader() {
   }
   const summary = bundle.summary;
   $("project-meta").innerHTML =
-    `<span>${summary.active_satellites} из ${summary.total_satellites} аппаратов</span><i></i>` +
-    `<span>${summary.plane_count} плоскости</span><i></i>` +
+    `<span>${summary.active_satellites} ${plural(summary.active_satellites, "аппарат", "аппарата", "аппаратов")} из ${summary.total_satellites}</span><i></i>` +
+    `<span>${summary.plane_count} ${plural(summary.plane_count, "плоскость", "плоскости", "плоскостей")}</span><i></i>` +
     `<span>этап ${summary.launch_stage}</span><i></i>` +
     `<span>ISL ${decimal(summary.isl_range_km, 0)} км</span><i></i>` +
     `<span>мин. доступность ${percent(summary.min_availability_pct)}</span>` +
@@ -164,6 +182,25 @@ function animate(now) {
       state.selection?.type === "satellite"
         ? bundle.satelliteIndex.get(state.selection.id) ?? -1
         : -1;
+    const trackedIndex = state.trackedSatelliteId
+      ? bundle.satelliteIndex.get(state.trackedSatelliteId) ?? -1
+      : -1;
+    const visibilitySiteId = ["client", "gateway"].includes(state.selection?.type)
+      ? state.selection.id
+      : null;
+    if (
+      visibilityCache.bundle !== bundle ||
+      visibilityCache.siteId !== visibilitySiteId ||
+      visibilityCache.step !== step
+    ) {
+      visibilityCache = {
+        bundle,
+        siteId: visibilitySiteId,
+        step,
+        indices: new Set(visibilitySiteId ? bundle.visibleSatellites(visibilitySiteId, step) : []),
+      };
+    }
+    const visibleIndices = visibilityCache.indices;
 
     viewer.render({
       seconds: state.timeSeconds,
@@ -171,6 +208,9 @@ function animate(now) {
       routeIndices: new Set(routeIndices),
       routeSites,
       selectedIndex,
+      trackedIndex,
+      visibilitySiteId,
+      visibleIndices,
       showLinks: state.showLinks,
       showOrbits: state.showOrbits,
       showRoute: state.showRoute,
@@ -182,11 +222,35 @@ function animate(now) {
 // Лёгкие элементы обновляем по таймеру, а не в каждом кадре: текст времени
 // и курсор дорожек не нуждаются в 60 обновлениях в секунду.
 setInterval(() => {
+  if (document.visibilityState !== "visible") return;
   if (!state.bundle) return;
   updateTimeUI(state);
   updateSceneSummary(state);
   if (state.playing && state.selection?.type === "client") renderInspector(state);
 }, 120);
+
+function setTime(seconds) {
+  if (!state.bundle) return;
+  const maximum = state.bundle.horizonSeconds - state.bundle.stepSeconds;
+  setState({ timeSeconds: Math.max(0, Math.min(maximum, seconds)) });
+  updateTimeUI(state);
+  updateSceneSummary(state);
+  renderInspector(state);
+}
+
+function nextGap() {
+  const gaps = state.bundle?.track(state.clientId)?.metrics?.gaps || [];
+  if (!gaps.length) {
+    toast("У выбранного пункта нет перерывов связи", "ok");
+    return;
+  }
+  const gap = gaps.find((item) => item.start_s > state.timeSeconds + 0.5) || gaps[0];
+  if (state.selection?.type !== "client" || state.selection.id !== state.clientId) {
+    setState({ selection: { type: "client", id: state.clientId }, trackedSatelliteId: null });
+  }
+  setTime(gap.start_s);
+  toast(`Перерыв: ${gap.cause_label}`, "warn");
+}
 
 // --------------------------------------------------------------------------- //
 // Действия пользователя
@@ -199,7 +263,7 @@ function markDirty() {
 }
 
 function selectClient(clientId) {
-  setState({ clientId, selection: { type: "client", id: clientId } });
+  setState({ clientId, selection: { type: "client", id: clientId }, trackedSatelliteId: null });
   renderInspector(state);
   renderTimeline(state);
   updateSceneSummary(state);
@@ -208,12 +272,17 @@ function selectClient(clientId) {
 function selectNode(id) {
   const bundle = state.bundle;
   if (!bundle) return;
-  if (bundle.satelliteIndex.has(id)) setState({ selection: { type: "satellite", id } });
+  if (bundle.satelliteIndex.has(id)) {
+    setState({
+      selection: { type: "satellite", id },
+      trackedSatelliteId: state.trackedSatelliteId === id ? id : null,
+    });
+  }
   else if (bundle.clients.some((item) => item.id === id)) {
     selectClient(id);
     return;
   } else if (bundle.gateways.some((item) => item.id === id)) {
-    setState({ selection: { type: "gateway", id } });
+    setState({ selection: { type: "gateway", id }, trackedSatelliteId: null });
   } else return;
   renderInspector(state);
 }
@@ -221,7 +290,7 @@ function selectNode(id) {
 async function saveCurrentVariant() {
   if (!state.bundle) return;
   const suggested = `${state.projectTitle} · этап ${state.bundle.design.launch_stage}`;
-  const label = window.prompt("Название варианта", suggested);
+  const label = await requestVariantName(suggested);
   if (!label) return;
   try {
     await api.saveVariant({
@@ -235,6 +304,23 @@ async function saveCurrentVariant() {
   } catch (error) {
     reportError(error);
   }
+}
+
+function requestVariantName(suggested) {
+  const dialog = $("save-variant-dialog");
+  const input = $("variant-name-input");
+  input.value = suggested;
+  dialog.returnValue = "";
+  $("cancel-variant-name").onclick = () => dialog.close("cancel");
+  dialog.showModal();
+  requestAnimationFrame(() => input.select());
+  return new Promise((resolve) => {
+    dialog.addEventListener(
+      "close",
+      () => resolve(dialog.returnValue === "save" ? input.value.trim() : null),
+      { once: true }
+    );
+  });
 }
 
 async function refreshVariants() {
@@ -258,6 +344,8 @@ async function runComparison(baseId, otherId) {
     });
     renderCompare(state, comparison);
   } catch (error) {
+    comparison = null;
+    renderCompare(state, comparison);
     reportError(error);
   } finally {
     setBusy(false);
@@ -333,7 +421,11 @@ function bindControls() {
     await recompute();
   });
 
-  $("home-camera").addEventListener("click", () => viewer.resetCamera());
+  $("home-camera").addEventListener("click", () => {
+    setState({ trackedSatelliteId: null });
+    viewer.resetCamera();
+    renderInspector(state);
+  });
   for (const [id, key] of [
     ["toggle-links", "showLinks"],
     ["toggle-orbits", "showOrbits"],
@@ -346,12 +438,7 @@ function bindControls() {
   }
 
   initTimeline({
-    setTime: (seconds) => {
-      setState({ timeSeconds: seconds });
-      updateTimeUI(state);
-      updateSceneSummary(state);
-      renderInspector(state);
-    },
+    setTime,
     togglePlay: () => {
       setState({ playing: !state.playing });
       updateTimeUI(state);
@@ -360,10 +447,41 @@ function bindControls() {
     selectClient,
   });
 
+  document.addEventListener("keydown", (event) => {
+    const target = event.target;
+    const editing =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLTextAreaElement ||
+      target?.isContentEditable;
+    if (editing || document.querySelector("dialog[open], .modal-backdrop.open, .drawer.open")) return;
+
+    if (event.code === "Space") {
+      event.preventDefault();
+      setState({ playing: !state.playing });
+      updateTimeUI(state);
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      setTime(state.timeSeconds + direction * (state.bundle?.stepSeconds || 0));
+    } else if (["1", "2", "3"].includes(event.key) && !event.repeat) {
+      document.querySelector(`[data-stage="${event.key}"]`)?.click();
+    } else if (event.key.toLowerCase() === "n" && !event.repeat) {
+      nextGap();
+    }
+  });
+
   initInspector({
     selectClient,
     selectNode,
+    setTime,
     focus: (type, id) => viewer.focus(type, id),
+    trackSatellite: (satelliteId) => {
+      const trackedSatelliteId = state.trackedSatelliteId === satelliteId ? null : satelliteId;
+      setState({ trackedSatelliteId });
+      if (trackedSatelliteId) viewer.focus("satellite", trackedSatelliteId);
+      renderInspector(state);
+    },
     editProject: () => {
       renderProject(state);
       setDrawer(true);
@@ -448,6 +566,7 @@ function bindControls() {
     saveCurrent: saveCurrentVariant,
     compare: runComparison,
     remove: async (id) => {
+      comparison = null;
       await api.deleteVariant(id);
       await refreshVariants();
     },
@@ -480,6 +599,27 @@ function bindControls() {
       ),
     applyOptimized,
   });
+
+  initCoverage({
+    open: async () => {
+      if (!state.bundle) return;
+      openCoverage();
+      renderCoverage(state);
+      if (state.coverage?.runId === state.bundle.runId) return;
+      setBusy(true, "Строим карту покрытия", "Проверяем маршрут по сетке широта/долгота");
+      try {
+        const runId = state.bundle.runId;
+        const data = await api.coverage(runId);
+        if (state.bundle?.runId !== runId) return;
+        setState({ coverage: { runId, data } });
+        renderCoverage(state);
+      } catch (error) {
+        reportError(error);
+      } finally {
+        setBusy(false);
+      }
+    },
+  });
 }
 
 // --------------------------------------------------------------------------- //
@@ -490,27 +630,52 @@ async function bootstrap() {
   const canvas = $("space-canvas");
   try {
     viewer = new Viewer(canvas, {
+      onAssetsReady: () => {
+        sceneAssetsReady = true;
+        updateSceneLoading();
+      },
+      onAssetError: () => {
+        $("scene-loading").querySelector("small").textContent =
+          "Часть текстур недоступна — используется базовая модель";
+      },
+      onCameraControl: () => {
+        if (!state.trackedSatelliteId) return;
+        setState({ trackedSatelliteId: null });
+        renderInspector(state);
+      },
       onPick: (owner) => {
         if (!owner) return;
         if (owner.type === "client") selectClient(owner.id);
         else {
-          setState({ selection: owner });
+          setState({
+            selection: owner,
+            trackedSatelliteId:
+              owner.type === "satellite" && owner.id === state.trackedSatelliteId
+                ? state.trackedSatelliteId
+                : null,
+          });
           renderInspector(state);
         }
       },
       onHover: (owner, event) => {
         const tooltip = $("object-tooltip");
+        canvas.style.cursor = owner ? "pointer" : "grab";
         if (!owner) {
           tooltip.hidden = true;
           return;
         }
         tooltip.hidden = false;
-        tooltip.style.left = `${event.offsetX}px`;
-        tooltip.style.top = `${event.offsetY}px`;
         tooltip.innerHTML = tooltipFor(owner);
+        const viewRect = $("space-view").getBoundingClientRect();
+        const margin = 10;
+        const x = event.clientX - viewRect.left + 12;
+        const y = event.clientY - viewRect.top + 12;
+        tooltip.style.left = `${Math.max(margin, Math.min(x, viewRect.width - tooltip.offsetWidth - margin))}px`;
+        tooltip.style.top = `${Math.max(margin, Math.min(y, viewRect.height - tooltip.offsetHeight - margin))}px`;
       },
     });
   } catch (error) {
+    $("scene-loading").hidden = true;
     $("webgl-error").hidden = false;
     $("webgl-error").textContent =
       "3D-сцена недоступна: браузер не поддерживает WebGL. Расчёт и панели продолжают работать.";
@@ -520,7 +685,19 @@ async function bootstrap() {
   bindControls();
 
   try {
-    const [{ presets }, legend] = await Promise.all([api.presets(), api.legend()]);
+    const requestedPresetId = initialUrlState.presetId || state.presetId;
+    const initialPreset = api.preset(requestedPresetId).then((payload) => ({
+      id: requestedPresetId,
+      payload,
+    })).catch(async (error) => {
+      if (requestedPresetId === state.presetId) throw error;
+      return { id: state.presetId, payload: await api.preset(state.presetId) };
+    });
+    const [{ presets }, legend, loadedPreset] = await Promise.all([
+      api.presets(),
+      api.legend(),
+      initialPreset,
+    ]);
     state.presets = presets;
     setState({ legend });
     $("strategy-select").innerHTML = legend.strategy
@@ -532,10 +709,14 @@ async function bootstrap() {
       )
       .join("");
 
-    const first = presets[0];
-    const payload = await api.preset(first.id);
-    await loadScenario(payload, { presetId: first.id, title: first.title });
+    const chosen = presets.find((item) => item.id === loadedPreset.id) || presets[0];
+    await loadScenario(loadedPreset.payload, {
+      presetId: chosen.id,
+      title: chosen.title,
+      restore: initialUrlState,
+    });
   } catch (error) {
+    $("scene-loading").hidden = true;
     setState({ online: false });
     renderHeader();
     reportError(error);
@@ -552,9 +733,17 @@ function tooltipFor(owner) {
     const index = bundle.satelliteIndex.get(owner.id);
     const satellite = bundle.satellites[index];
     const active = bundle.isActive(step, index);
-    return `<strong>${escapeHtml(owner.id)}</strong><br>Плоскость ${escapeHtml(
+    const visibilitySiteId = ["client", "gateway"].includes(state.selection?.type)
+      ? state.selection.id
+      : null;
+    const visibility = visibilitySiteId
+      ? `<br>${bundle.isVisible(visibilitySiteId, step, index) ? "Виден" : "Не виден"} из ${escapeHtml(
+          visibilitySiteId
+        )}`
+      : "";
+    return `<strong>Спутник ${escapeHtml(owner.id)}</strong><br>Плоскость ${escapeHtml(
       satellite.plane_id
-    )} · очередь ${satellite.launch_batch}<br>${active ? "активен" : "недоступен"}`;
+    )} · очередь ${satellite.launch_batch}<br>${active ? "активен" : "недоступен"}${visibility}`;
   }
   if (owner.type === "plane") {
     const plane = bundle.planes.find((item) => item.id === owner.id);
@@ -565,13 +754,40 @@ function tooltipFor(owner) {
   }
   const site = bundle.groundSites.find((item) => item.id === owner.id);
   const metrics = owner.type === "client" ? bundle.metricsFor(owner.id) : null;
-  return `<strong>${escapeHtml(site?.name || owner.id)}</strong><br>${
-    owner.type === "gateway" ? "Шлюз" : `Доступность ${percent(metrics?.availability_pct)}`
+  return `<strong>${owner.type === "gateway" ? "Шлюз" : "Клиентский пункт"} ${escapeHtml(
+    site?.name || owner.id
+  )}</strong><br>${
+    owner.type === "gateway" ? `ID ${escapeHtml(owner.id)}` : `Доступность ${percent(metrics?.availability_pct)}`
   }`;
 }
 
 subscribe((_, keys) => {
   if (keys.has("dirty") || keys.has("status") || keys.has("online")) renderHeader();
+  if (keys.has("presetId") || keys.has("clientId") || keys.has("timeSeconds")) scheduleUrlSync();
 });
+
+function readUrlState() {
+  const params = new URLSearchParams(window.location.search);
+  const rawTime = params.get("t");
+  const time = rawTime === null ? Number.NaN : Number(rawTime);
+  return {
+    presetId: params.get("preset") || null,
+    clientId: params.get("client") || null,
+    timeSeconds: Number.isFinite(time) && time >= 0 ? time : null,
+  };
+}
+
+function scheduleUrlSync() {
+  if (urlSyncTimer) return;
+  urlSyncTimer = window.setTimeout(() => {
+    urlSyncTimer = null;
+    if (!state.bundle) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("preset", state.presetId);
+    if (state.clientId) url.searchParams.set("client", state.clientId);
+    url.searchParams.set("t", String(Math.round(state.timeSeconds)));
+    history.replaceState(null, "", url);
+  }, 250);
+}
 
 bootstrap();

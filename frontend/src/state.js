@@ -25,6 +25,8 @@ export const state = {
   speed: 300,
 
   selection: null,
+  /** Аппарат, который камера удерживает в центре кадра. */
+  trackedSatelliteId: null,
   strategy: "min_hops",
 
   showLinks: true,
@@ -39,6 +41,7 @@ export const state = {
   online: true,
   variants: [],
   analysis: { strategies: null, spof: null, optimize: null },
+  coverage: null,
   job: null,
 };
 
