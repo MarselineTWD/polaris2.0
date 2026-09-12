@@ -2,3 +2,5 @@ fastapi>=0.100
 uvicorn[standard]>=0.23
 numpy>=1.26
 pydantic>=2.0
+satkit==0.21.2
+itur==0.4.0

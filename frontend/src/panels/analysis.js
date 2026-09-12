@@ -8,8 +8,10 @@
 
 import { decimal, duration, escapeHtml, percent, points } from "../format.js";
 import { $, setModal } from "./shell.js";
+import { bindResearch, researchSection } from "./research.js";
 
 let handlers = {};
+let activeTab = "fast";
 
 export function initAnalysis(callbacks) {
   handlers = callbacks;
@@ -18,6 +20,13 @@ export function initAnalysis(callbacks) {
 
 export function openAnalysis() {
   setModal("analysis-modal", true);
+}
+
+export function openEngineeringAnalysis(state) {
+  activeTab = "research";
+  handlers.loadResearch?.();
+  renderAnalysis(state);
+  openAnalysis();
 }
 
 export function renderAnalysis(state) {
@@ -31,13 +40,32 @@ export function renderAnalysis(state) {
   const analysis = state.analysis;
 
   host.innerHTML = `
-    ${adviceSection(summary)}
-    ${criticalitySection(summary)}
-    ${strategySection(analysis.strategies)}
-    ${spofSection(analysis.spof)}
-    ${optimizeSection(analysis.optimize, summary)}`;
+    <nav class="analysis-tabs" aria-label="Режим анализа">
+      <button class="${activeTab === "fast" ? "active" : ""}" data-analysis-tab="fast" type="button">
+        <span>Быстрый анализ</span><small>Модель задания · миллисекунды</small>
+      </button>
+      <button class="${activeTab === "research" ? "active" : ""}" data-analysis-tab="research" type="button">
+        <span>Инженерная верификация</span><small>SatKit · link budget · погода</small>
+      </button>
+    </nav>
+    <div class="analysis-tab-content">
+      ${activeTab === "fast" ? `
+        ${adviceSection(summary)}
+        ${criticalitySection(summary)}
+        ${strategySection(analysis.strategies)}
+        ${spofSection(analysis.spof)}
+        ${optimizeSection(analysis.optimize, summary)}` : researchSection(state)}
+    </div>`;
 
-  bind(state);
+  document.querySelectorAll("[data-analysis-tab]").forEach((button) =>
+    button.addEventListener("click", () => {
+      activeTab = button.dataset.analysisTab;
+      if (activeTab === "research") handlers.loadResearch?.();
+      renderAnalysis(state);
+    })
+  );
+  if (activeTab === "fast") bind(state);
+  else bindResearch(state, handlers);
 }
 
 function adviceSection(summary) {

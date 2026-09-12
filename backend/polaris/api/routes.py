@@ -14,19 +14,23 @@ from ..domain.engine import RunOptions, snapshot
 from ..domain.routing import CAUSE_LABELS, STRATEGY_LABELS, GapCause, LinkState, Strategy
 from ..domain.scenario import ScenarioValidationError
 from ..domain.serialize import export_result
+from ..research.engine import ResearchOptions, run_research
+from ..research.profiles import profile_catalog
 from .jobs import Job, progress_reporter
 from .schemas import (
     CompareRequest,
+    ExternalRefreshRequest,
     MultiCompareRequest,
     OptimizeRequest,
     RunOptionsIn,
     RunRequest,
+    ResearchRunRequest,
     SpofRequest,
     StrategyCompareRequest,
     ValidateRequest,
     VariantCreate,
 )
-from .services import jobs, load_scenario, presets, runs, variants
+from .services import external_data, jobs, load_scenario, presets, research_runs, runs, variants
 
 router = APIRouter(prefix="/api")
 
@@ -511,3 +515,91 @@ def cancel_job(job_id: str) -> Response:
 @router.get("/jobs")
 def job_list() -> Response:
     return _json({"jobs": [job.as_dict() for job in jobs.list()]})
+
+
+# --------------------------------------------------------------------------- #
+# Инженерная верификация и управляемые снимки внешних данных
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/external-data/status")
+def external_data_status() -> Response:
+    """Статус локальных снимков; сам запрос никогда не выходит в интернет."""
+    return _json(external_data.status())
+
+
+@router.post("/external-data/refresh", status_code=202)
+def external_data_refresh(request: ExternalRefreshRequest) -> dict[str, Any]:
+    """Запустить явное обновление источников в фоне."""
+    scenario = load_scenario(request.scenario)
+
+    def work(job: Job) -> dict[str, Any]:
+        return external_data.refresh(
+            scenario,
+            sources=request.sources,
+            progress=progress_reporter(job),
+        )
+
+    return _submit("external-data", work)
+
+
+@router.get("/research/profiles")
+def research_profiles() -> Response:
+    return _json(
+        {
+            "profiles": profile_catalog(),
+            "notice": (
+                "Параметры являются демонстрационными предположениями и не заменяют "
+                "паспорта передатчиков, антенн и модемов."
+            ),
+        }
+    )
+
+
+@router.post("/research/runs", status_code=202)
+def create_research_run(request: ResearchRunRequest) -> dict[str, Any]:
+    scenario = load_scenario(request.scenario)
+    snapshots, passports = external_data.data_for_run()
+    options = ResearchOptions(
+        link_mode=request.link_mode,
+        strategy=request.strategy,
+        step_s=request.step_s,
+        profile_ids=tuple(request.profile_ids),
+    )
+
+    def work(job: Job) -> dict[str, Any]:
+        result = run_research(
+            scenario,
+            snapshots,
+            passports,
+            options,
+            progress=progress_reporter(job),
+        )
+        research_runs.save(result)
+        return result
+
+    return _submit("research", work)
+
+
+@router.get("/research/runs/{run_id}")
+def get_research_run(run_id: str) -> Response:
+    result = research_runs.get(run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Инженерный расчёт не найден")
+    return _json(result)
+
+
+@router.get("/research/runs/{run_id}/export")
+def export_research_run(run_id: str) -> Response:
+    result = research_runs.get(run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Инженерный расчёт не найден")
+    return _json(result, filename=f"{run_id}-engineering-verification.json")
+
+
+@router.post("/research/runs/{run_id}/hazards/{event_id}/scenario")
+def create_hazard_scenario(run_id: str, event_id: str) -> Response:
+    payload = research_runs.hazard_scenario(run_id, event_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Расчёт или событие сближения не найдено")
+    return _json(payload, status_code=201)

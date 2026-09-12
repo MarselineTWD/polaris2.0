@@ -14,6 +14,8 @@ from ..domain.engine import RunOptions, RunResult, compute_run
 from ..domain.recommendations import build_recommendations
 from ..domain.scenario import Scenario, parse_scenario
 from ..domain.serialize import pack_bundle
+from ..research.external_data import ExternalDataService
+from ..research.store import ResearchRegistry
 from ..store.db import Database
 from ..store.variants import VariantRepository
 from .jobs import JobRegistry
@@ -94,6 +96,8 @@ variants = VariantRepository(database)
 runs = RunRegistry(settings.run_cache_size)
 presets = Presets(settings.data_dir)
 jobs = JobRegistry()
+external_data = ExternalDataService(settings.state_dir / "external-data")
+research_runs = ResearchRegistry(settings.state_dir / "research-runs")
 
 
 def load_scenario(payload: Any) -> Scenario:

@@ -5,13 +5,21 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONPATH=/app/backend \
-    POLARIS_STATE_DIR=/app/state
+    POLARIS_STATE_DIR=/app/state \
+    POLARIS_SATKIT_DATA_DIR=/app/satkit-data \
+    SATKIT_OFFLINE=1
 
 WORKDIR /app
 
 # Зависимости ставим отдельным слоем, чтобы правки кода не перезапускали установку.
 COPY backend/requirements.txt backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
+
+# EOP, space weather, gravity and JPL ephemerides are frozen in the image.
+# At runtime SatKit is offline, so an engineering result never changes because
+# a library silently downloaded a newer table during calculation.
+RUN mkdir -p /app/satkit-data && \
+    env -u SATKIT_OFFLINE python -c "import satkit as sk; sk.utils.set_datadir('/app/satkit-data'); sk.utils.update_datafiles()"
 
 # Раскладка внутри образа повторяет репозиторий: тогда пути по умолчанию
 # («Данные», «frontend») работают без переопределения, а тесты паритета

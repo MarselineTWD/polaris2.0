@@ -30,6 +30,20 @@ def test_health(client: TestClient) -> None:
     assert body["presets"] == 4
 
 
+def test_research_discovery_endpoints(client: TestClient) -> None:
+    profiles = client.get("/api/research/profiles")
+    assert profiles.status_code == 200
+    assert [item["id"] for item in profiles.json()["profiles"]] == [
+        "conservative", "nominal", "enhanced"
+    ]
+    status = client.get("/api/external-data/status")
+    assert status.status_code == 200
+    assert status.json()["refresh_policy"] == "manual"
+    assert {item["id"] for item in status.json()["sources"]} >= {
+        "weather", "elevation", "space_weather", "celestrak", "satnogs", "itur", "satkit"
+    }
+
+
 def test_presets_are_listed_and_loadable(client: TestClient) -> None:
     presets = client.get("/api/presets").json()["presets"]
     assert [item["id"] for item in presets] == [

@@ -100,6 +100,23 @@ export const api = {
     }),
   job: (id) => request(`/jobs/${encodeURIComponent(id)}`),
   cancelJob: (id) => request(`/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
+
+  externalDataStatus: () => request("/external-data/status"),
+  refreshExternalData: (scenario, sources) =>
+    request("/external-data/refresh", {
+      method: "POST",
+      body: { scenario, ...(sources ? { sources } : {}) },
+    }),
+  researchProfiles: () => request("/research/profiles"),
+  runResearch: (scenario, options) =>
+    request("/research/runs", { method: "POST", body: { scenario, ...options } }),
+  researchRun: (id) => request(`/research/runs/${encodeURIComponent(id)}`),
+  exportResearch: (id) => request(`/research/runs/${encodeURIComponent(id)}/export`),
+  createHazardScenario: (runId, eventId) =>
+    request(
+      `/research/runs/${encodeURIComponent(runId)}/hazards/${encodeURIComponent(eventId)}/scenario`,
+      { method: "POST" }
+    ),
 };
 
 /** Дождаться завершения фоновой задачи, сообщая прогресс. */

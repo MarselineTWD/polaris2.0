@@ -17,7 +17,7 @@ import { initInspector, renderInspector } from "./panels/inspector.js";
 import { initTimeline, renderTimeline, updateSceneSummary, updateTimeUI } from "./panels/timeline.js";
 import { initProject, renderProject, setProblems, toggleSatelliteFailure } from "./panels/project.js";
 import { initCompare, openCompare, primeSelection, renderCompare } from "./panels/compare.js";
-import { initAnalysis, openAnalysis, renderAnalysis } from "./panels/analysis.js";
+import { initAnalysis, openAnalysis, openEngineeringAnalysis, renderAnalysis } from "./panels/analysis.js";
 import { initCoverage, renderCoverage, setCoverageMode, updateCoverageTime } from "./panels/coverage.js";
 
 state.presets = [];
@@ -101,6 +101,7 @@ async function loadScenario(payload, { presetId = null, title = null, restore = 
     trackedSatelliteId: null,
     clientId: restore?.clientId ?? null,
     analysis: { strategies: null, spof: null, optimize: null },
+    research: { ...state.research, result: null, hazardsVisible: false },
   };
   if (typeof restore?.timeSeconds === "number" && Number.isFinite(restore.timeSeconds)) {
     patch.timeSeconds = Math.max(0, restore.timeSeconds);
@@ -422,12 +423,127 @@ async function runBackgroundJob(kind, starter, title, { cancellable = false } = 
     renderAnalysis(state);
     toast("Анализ завершён", "ok");
   } catch (error) {
-    if (error instanceof ApiError && error.code === "job_cancelled") toast("Подбор отменён", "ok");
+    if (error instanceof ApiError && error.code === "job_cancelled") toast("Расчёт отменён", "ok");
     else reportError(error);
   } finally {
     activeJobId = null;
     $("cancel-job").hidden = true;
     setBusy(false);
+  }
+}
+
+async function loadResearchPanel() {
+  if (state.research.externalStatus && state.research.profiles) return;
+  try {
+    const [externalStatus, profiles] = await Promise.all([
+      state.research.externalStatus ? Promise.resolve(state.research.externalStatus) : api.externalDataStatus(),
+      state.research.profiles ? Promise.resolve(state.research.profiles) : api.researchProfiles(),
+    ]);
+    setState({ research: { ...state.research, externalStatus, profiles } });
+    renderAnalysis(state);
+  } catch (error) {
+    reportError(error);
+  }
+}
+
+async function runResearchJob(starter, title, onDone) {
+  setBusy(true, title, "Запускаем фоновую задачу…");
+  try {
+    const job = await starter();
+    activeJobId = job.id;
+    $("cancel-job").hidden = false;
+    $("cancel-job").disabled = false;
+    $("cancel-job").textContent = "Отменить расчёт";
+    const result = await awaitJob(job.id, (current) => {
+      const percentDone = Math.round((current.progress || 0) * 100);
+      $("blocking-title").textContent =
+        current.status === "cancelling" ? "Останавливаем задачу" : title;
+      $("blocking-detail").innerHTML =
+        current.status === "cancelling"
+          ? "Завершаем текущий безопасный этап"
+          : `<div class="progress-bar"><i style="width:${percentDone}%"></i></div>` +
+            `<div style="margin-top:7px">${percentDone}% · ${current.done} из ${current.total || "—"}</div>`;
+    }, { interval: 500, limit: 1200 });
+    await onDone(result);
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "job_cancelled") toast("Расчёт отменён", "ok");
+    else reportError(error);
+  } finally {
+    activeJobId = null;
+    $("cancel-job").hidden = true;
+    setBusy(false);
+  }
+}
+
+async function refreshResearchData() {
+  if (!state.applied || state.research.loadingSources) return;
+  setState({ research: { ...state.research, loadingSources: true } });
+  renderAnalysis(state);
+  await runResearchJob(
+    () => api.refreshExternalData(state.applied),
+    "Обновляем инженерные данные",
+    async (result) => {
+      setState({ research: { ...state.research, externalStatus: result, loadingSources: false } });
+      renderAnalysis(state);
+      const failed = (result.updated || []).filter((item) => !item.ok).length;
+      toast(failed ? `Данные обновлены частично: ${failed} источников недоступны` : "Все снимки обновлены", failed ? "warn" : "ok");
+    }
+  );
+  if (state.research.loadingSources) {
+    setState({ research: { ...state.research, loadingSources: false } });
+    renderAnalysis(state);
+  }
+}
+
+async function startResearchVerification() {
+  if (!state.applied) return;
+  await runResearchJob(
+    () => api.runResearch(state.applied, {
+      link_mode: state.research.linkMode,
+      strategy: "max_margin",
+      step_s: 60,
+      profile_ids: ["conservative", "nominal", "enhanced"],
+    }),
+    "Инженерная верификация",
+    async (result) => {
+      setState({
+        research: {
+          ...state.research,
+          result,
+          selectedProfile: result.profiles.some((item) => item.id === "nominal") ? "nominal" : result.profiles[0]?.id,
+          externalStatus: { ...state.research.externalStatus, sources: result.sources },
+        },
+      });
+      renderAnalysis(state);
+      toast(`Инженерный расчёт завершён за ${decimal(result.elapsed_ms / 1000, 1)} с`, "ok");
+    }
+  );
+}
+
+async function exportResearchResult() {
+  const result = state.research.result;
+  if (!result) return;
+  try {
+    const payload = await api.exportResearch(result.id);
+    downloadJson(payload, `${state.projectTitle}-engineering-verification.json`);
+    toast("Паспорт инженерной верификации экспортирован", "ok");
+  } catch (error) {
+    reportError(error);
+  }
+}
+
+async function createHazardScenario(eventId) {
+  const result = state.research.result;
+  if (!result) return;
+  try {
+    const payload = await api.createHazardScenario(result.id, eventId);
+    setState({ draft: clone(payload.scenario), dirty: true });
+    renderProject(state);
+    renderHeader();
+    setModal("analysis-modal", false);
+    toast("Сценарий окна манёвра добавлен в черновик. Нажмите «Пересчитать».", "ok");
+  } catch (error) {
+    reportError(error);
   }
 }
 
@@ -497,8 +613,8 @@ function bindControls() {
     event.currentTarget.textContent = "Отменяем…";
     try {
       await api.cancelJob(activeJobId);
-      $("blocking-title").textContent = "Останавливаем подбор";
-      $("blocking-detail").textContent = "Завершаем текущую порцию расчётов";
+      $("blocking-title").textContent = "Останавливаем задачу";
+      $("blocking-detail").textContent = "Завершаем текущий безопасный этап";
     } catch (error) {
       reportError(error);
     }
@@ -723,6 +839,23 @@ function bindControls() {
         { cancellable: true }
       ),
     applyOptimized,
+    loadResearch: loadResearchPanel,
+    refreshExternal: refreshResearchData,
+    runResearch: startResearchVerification,
+    exportResearch: exportResearchResult,
+    setResearchMode: (linkMode) => {
+      setState({ research: { ...state.research, linkMode, result: null } });
+      renderAnalysis(state);
+    },
+    selectResearchProfile: (selectedProfile) => {
+      setState({ research: { ...state.research, selectedProfile } });
+      renderAnalysis(state);
+    },
+    toggleResearchHazards: (hazardsVisible) => {
+      setState({ research: { ...state.research, hazardsVisible } });
+      renderAnalysis(state);
+    },
+    createHazardScenario,
   });
 
   initCoverage({
@@ -828,6 +961,7 @@ async function bootstrap() {
       title: chosen.title,
       restore: initialUrlState,
     });
+    if (location.hash === "#engineering") openEngineeringAnalysis(state);
   } catch (error) {
     $("scene-loading").hidden = true;
     setState({ online: false });

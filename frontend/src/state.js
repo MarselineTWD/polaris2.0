@@ -42,6 +42,15 @@ export const state = {
   online: true,
   variants: [],
   analysis: { strategies: null, spof: null, optimize: null },
+  research: {
+    externalStatus: null,
+    profiles: null,
+    result: null,
+    linkMode: "hybrid",
+    selectedProfile: "nominal",
+    hazardsVisible: false,
+    loadingSources: false,
+  },
   coverage: null,
   job: null,
 };
