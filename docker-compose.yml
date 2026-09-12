@@ -3,14 +3,34 @@ services:
     build: .
     image: polaris:1.0.0
     container_name: polaris
-    ports:
-      - "8000:8000"
     environment:
-      # Число процессов для автоподбора конфигурации и свипа точек отказа.
       POLARIS_OPTIMIZER_WORKERS: "4"
     volumes:
-      # Сохранённые варианты переживают пересборку контейнера.
       - polaris-state:/app/state
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    depends_on:
+      - polaris
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: /bin/sh
+    command: -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
     restart: unless-stopped
 
 volumes:
