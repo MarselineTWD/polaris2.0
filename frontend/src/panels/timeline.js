@@ -52,7 +52,7 @@ export function renderTimeline(state) {
 
   $("time-axis").innerHTML = Array.from({ length: 5 }, (_, index) => {
     const seconds = view.start + (view.span / 4) * index;
-    return `<span>${clock(Math.min(bundle.horizonSeconds - 1, seconds))}</span>`;
+    return `<span>${clock(Math.min(bundle.horizonSeconds - 1, seconds), true)}</span>`;
   }).join("");
 
   host.innerHTML = bundle.clients
@@ -106,7 +106,7 @@ function renderSegment(segment, bundle, view) {
   const left = ((visibleStart - view.start) / view.span) * 100;
   const width = ((visibleEnd - visibleStart) / view.span) * 100;
   return `<i class="lane-segment ${STATE_CLASS[segment.state]} cause-${segment.cause}"
-            title="${escapeHtml(CAUSE_LABEL[segment.cause])}: ${clock(segmentStart)}–${clock(segmentEnd)}"
+            title="${escapeHtml(CAUSE_LABEL[segment.cause])}: ${clock(segmentStart, true)}–${clock(segmentEnd, true)}"
             style="left:${left}%;width:${width}%"></i>`;
 }
 

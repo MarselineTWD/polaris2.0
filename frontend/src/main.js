@@ -646,23 +646,56 @@ function bindControls() {
     button.disabled = false;
   });
 
-  $("export-button").addEventListener("click", async (event) => {
+  const exportButton = $("export-button");
+  const exportOptions = $("export-options");
+
+  const closeExportMenu = () => {
+    exportOptions.hidden = true;
+    exportButton.setAttribute("aria-expanded", "false");
+  };
+
+  exportButton.addEventListener("click", () => {
     if (!state.bundle || state.status !== "ready" || state.dirty) {
       toast("Сначала выполните расчёт текущей конфигурации", "warn");
       return;
     }
-    event.currentTarget.disabled = true;
+    const opening = exportOptions.hidden;
+    exportOptions.hidden = !opening;
+    exportButton.setAttribute("aria-expanded", String(opening));
+    if (opening) exportOptions.querySelector("button")?.focus();
+  });
+
+  document.querySelectorAll("[data-export-format]").forEach((option) => option.addEventListener("click", async () => {
+    const format = option.dataset.exportFormat;
+    closeExportMenu();
+    exportButton.disabled = true;
     try {
-      const csv = await api.exportRunCsv(state.bundle.runId);
-      const excelCsv = csv.startsWith("\uFEFF") ? csv : `\uFEFF${csv}`;
-      downloadText(excelCsv, `${state.projectTitle}-result.csv`, "text/csv;charset=utf-8");
-      toast("CSV экспортирован: одна строка на каждый момент и наземный пункт", "ok");
+      if (format === "json") {
+        const payload = await api.exportRun(state.bundle.runId);
+        downloadJson(payload, `${state.projectTitle}-result.json`);
+        toast("JSON экспортирован: полный результат и использованный сценарий", "ok");
+      } else {
+        const csv = await api.exportRunCsv(state.bundle.runId);
+        const excelCsv = csv.startsWith("\uFEFF") ? csv : `\uFEFF${csv}`;
+        downloadText(excelCsv, `${state.projectTitle}-result.csv`, "text/csv;charset=utf-8");
+        toast("CSV экспортирован: одна строка на каждый момент и наземный пункт", "ok");
+      }
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
         toast("Расчёт больше не доступен. Нажмите «Пересчитать» и повторите экспорт.", "warn");
       } else reportError(error);
     } finally {
-      event.currentTarget.disabled = false;
+      exportButton.disabled = false;
+    }
+  }));
+
+  document.addEventListener("click", (event) => {
+    if (!$("export-menu").contains(event.target)) closeExportMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !exportOptions.hidden) {
+      closeExportMenu();
+      exportButton.focus();
     }
   });
 
