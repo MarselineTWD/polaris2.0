@@ -17,6 +17,7 @@ from ..domain.serialize import export_result
 from .jobs import Job, progress_reporter
 from .schemas import (
     CompareRequest,
+    MultiCompareRequest,
     OptimizeRequest,
     RunOptionsIn,
     RunRequest,
@@ -212,6 +213,15 @@ def create_variant(request: VariantCreate) -> Response:
     return _json(saved, status_code=201)
 
 
+@router.get("/variants/{variant_id}/export")
+def export_variant(variant_id: str) -> Response:
+    """Скачать сохранённую конфигурацию в формате, пригодном для повторного импорта."""
+    saved = variants.get(variant_id)
+    if saved is None:
+        raise HTTPException(status_code=404, detail="Вариант не найден")
+    return _json(saved["scenario"], filename=f"{variant_id}-scenario.json")
+
+
 @router.delete("/variants/{variant_id}")
 def delete_variant(variant_id: str) -> dict[str, Any]:
     if not variants.delete(variant_id):
@@ -247,6 +257,55 @@ def compare(request: CompareRequest) -> Response:
             "parameter_diff": _parameter_diff(base.to_dict(), other.to_dict()),
             "client_diff": _client_diff(base_bundle["summary"], other_bundle["summary"]),
             "verdict": _verdict(base_summary, other_summary),
+        }
+    )
+
+
+@router.post("/compare/multiple")
+def compare_multiple(request: MultiCompareRequest) -> Response:
+    """Посчитать 2–5 вариантов на одной сетке без ролей «база» и «новый»."""
+    if len(set(request.variant_ids)) != len(request.variant_ids):
+        raise HTTPException(status_code=422, detail="Варианты в сравнении не должны повторяться")
+
+    options = _options(request.options)
+    rows: list[dict[str, Any]] = []
+    for variant_id in request.variant_ids:
+        saved = variants.get(variant_id)
+        if saved is None:
+            raise HTTPException(status_code=404, detail=f"Вариант «{variant_id}» не найден")
+        scenario = load_scenario(saved["scenario"])
+        _, bundle = runs.run(scenario, options)
+        summary = bundle["summary"]
+        rows.append(
+            {
+                "id": variant_id,
+                "label": saved["label"],
+                "min_availability_pct": summary["min_availability_pct"],
+                "mean_availability_pct": summary["mean_availability_pct"],
+                "max_gap_s": max((client["max_gap_s"] for client in summary["clients"]), default=0),
+                "mean_links": summary["mean_links"],
+                "target_met": summary["target_met"],
+                "launch_stage": summary["launch_stage"],
+                "active_satellites": summary["active_satellites"],
+                "isl_range_km": summary["isl_range_km"],
+                "clients": summary["clients"],
+            }
+        )
+
+    recommended = max(
+        rows,
+        key=lambda row: (
+            row["min_availability_pct"],
+            row["mean_availability_pct"],
+            -row["max_gap_s"],
+        ),
+    )
+    return _json(
+        {
+            "variants": rows,
+            "recommended_id": recommended["id"],
+            "recommended_label": recommended["label"],
+            "strategy": request.options.strategy,
         }
     )
 
@@ -436,6 +495,14 @@ def _submit(kind: str, work: Any) -> dict[str, Any]:
 @router.get("/jobs/{job_id}")
 def job_status(job_id: str) -> Response:
     job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+    return _json(job.as_dict())
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> Response:
+    job = jobs.cancel(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Задача не найдена")
     return _json(job.as_dict())

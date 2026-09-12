@@ -47,6 +47,13 @@ class CompareRequest(BaseModel):
     options: RunOptionsIn = Field(default_factory=RunOptionsIn)
 
 
+class MultiCompareRequest(BaseModel):
+    """Сопоставление от двух до пяти равноправных сохранённых вариантов."""
+
+    variant_ids: list[str] = Field(min_length=2, max_length=5)
+    options: RunOptionsIn = Field(default_factory=RunOptionsIn)
+
+
 class StrategyCompareRequest(BaseModel):
     scenario: dict[str, Any]
     strategies: list[Literal["min_hops", "min_latency", "max_margin"]] | None = None

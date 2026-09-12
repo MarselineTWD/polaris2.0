@@ -32,6 +32,7 @@ export const state = {
   showLinks: true,
   showOrbits: true,
   showRoute: true,
+  viewMode: "3d",
   earthRotation: true,
   /** Разрешено ли менять условия расчёта (environment). По умолчанию нет. */
   researchMode: false,

@@ -82,12 +82,14 @@ export const api = {
   run: (scenario, options) => request("/runs", { method: "POST", body: { scenario, options } }),
   snapshotUrl: (runId, t) => `${BASE}/runs/${runId}/snapshot?t_s=${t}`,
   coverage: (runId) => request(`/runs/${encodeURIComponent(runId)}/coverage`),
-  exportUrl: (runId) => `${BASE}/runs/${runId}/export`,
+  exportRun: (runId) => request(`/runs/${encodeURIComponent(runId)}/export`),
 
   variants: () => request("/variants"),
   saveVariant: (payload) => request("/variants", { method: "POST", body: payload }),
+  exportVariant: (id) => request(`/variants/${encodeURIComponent(id)}/export`),
   deleteVariant: (id) => request(`/variants/${encodeURIComponent(id)}`, { method: "DELETE" }),
   compare: (payload) => request("/compare", { method: "POST", body: payload }),
+  compareMany: (payload) => request("/compare/multiple", { method: "POST", body: payload }),
 
   strategies: (scenario) => request("/analysis/strategies", { method: "POST", body: { scenario } }),
   spof: (scenario) => request("/analysis/spof", { method: "POST", body: { scenario } }),
@@ -97,6 +99,7 @@ export const api = {
       body: { scenario, max_evaluations: maxEvaluations },
     }),
   job: (id) => request(`/jobs/${encodeURIComponent(id)}`),
+  cancelJob: (id) => request(`/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
 };
 
 /** Дождаться завершения фоновой задачи, сообщая прогресс. */
@@ -107,6 +110,9 @@ export async function awaitJob(jobId, onProgress, { interval = 400, limit = 600 
     if (job.status === "done") return job.result;
     if (job.status === "failed") {
       throw new ApiError(job.error || "Фоновый расчёт завершился ошибкой", { code: "job_failed" });
+    }
+    if (job.status === "cancelled") {
+      throw new ApiError("Расчёт отменён", { code: "job_cancelled" });
     }
     await new Promise((resolve) => setTimeout(resolve, interval));
   }

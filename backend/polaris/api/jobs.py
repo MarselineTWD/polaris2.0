@@ -15,6 +15,10 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 
+class JobCancelled(Exception):
+    """Фоновая задача остановлена по запросу пользователя."""
+
+
 @dataclass
 class Job:
     id: str
@@ -29,6 +33,7 @@ class Job:
         default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds")
     )
     finished_at: str | None = None
+    cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -42,6 +47,7 @@ class Job:
             "error": self.error,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
+            "cancel_requested": self.cancel_event.is_set(),
         }
 
 
@@ -72,8 +78,14 @@ class JobRegistry:
         def runner() -> None:
             try:
                 job.result = work(job)
+                if job.cancel_event.is_set():
+                    raise JobCancelled()
                 job.status = "done"
                 job.progress = 1.0
+            except JobCancelled:
+                job.status = "cancelled"
+                job.result = None
+                job.error = None
             except Exception as error:  # noqa: BLE001 - задача не должна ронять процесс
                 job.status = "failed"
                 job.error = str(error) or error.__class__.__name__
@@ -93,11 +105,20 @@ class JobRegistry:
         with self._lock:
             return [self._jobs[key] for key in reversed(self._order) if key in self._jobs]
 
+    def cancel(self, job_id: str) -> Job | None:
+        job = self.get(job_id)
+        if job is None:
+            return None
+        if job.status in {"running", "cancelling"}:
+            job.cancel_event.set()
+            job.status = "cancelling"
+        return job
+
     def _evict(self) -> None:
         while len(self._order) > self._keep:
             oldest = self._order.pop(0)
             job = self._jobs.get(oldest)
-            if job is not None and job.status == "running":
+            if job is not None and job.status in {"running", "cancelling"}:
                 self._order.append(oldest)  # выполняющиеся не вытесняем
                 return
             self._jobs.pop(oldest, None)
@@ -105,6 +126,8 @@ class JobRegistry:
 
 def progress_reporter(job: Job) -> Callable[[int, int], None]:
     def report(done: int, total: int) -> None:
+        if job.cancel_event.is_set():
+            raise JobCancelled()
         job.done = done
         job.total = total
         job.progress = done / total if total else 0.0

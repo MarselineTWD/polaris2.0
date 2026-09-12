@@ -131,8 +131,24 @@ def test_variant_save_list_and_compare(client: TestClient, payload: dict) -> Non
     assert "launch_stage" in diff
     assert len(comparison["client_diff"]) == 3
 
+    multiple = client.post(
+        "/api/compare/multiple", json={"variant_ids": [base_id, other_id]}
+    )
+    assert multiple.status_code == 200
+    multi_body = multiple.json()
+    assert [item["id"] for item in multi_body["variants"]] == [base_id, other_id]
+    assert multi_body["recommended_id"] == base_id
+    assert all(len(item["clients"]) == 3 for item in multi_body["variants"])
+
+    exported = client.get(f"/api/variants/{other_id}/export")
+    assert exported.status_code == 200
+    assert "attachment" in exported.headers["content-disposition"]
+    assert exported.json()["schema_version"] == "cosmo-A-1.0"
+    assert exported.json()["design"]["launch_stage"] == 1
+
     client.delete(f"/api/variants/{base_id}")
     client.delete(f"/api/variants/{other_id}")
+    assert client.get(f"/api/variants/{other_id}/export").status_code == 404
 
 
 def test_strategy_comparison_endpoint(client: TestClient, payload: dict) -> None:
@@ -162,6 +178,24 @@ def test_optimize_job_runs_to_completion(client: TestClient) -> None:
     assert status["result"]["best"]["min_availability_pct"] >= status["result"]["baseline"][
         "min_availability_pct"
     ]
+
+
+def test_optimize_job_can_be_cancelled(client: TestClient) -> None:
+    scenario = load_raw("04_link_range")
+    accepted = client.post(
+        "/api/analysis/optimize", json={"scenario": scenario, "max_evaluations": 600}
+    )
+    assert accepted.status_code == 202
+    job_id = accepted.json()["id"]
+    cancelled = client.post(f"/api/jobs/{job_id}/cancel")
+    assert cancelled.status_code == 200
+
+    for _ in range(80):
+        status = client.get(f"/api/jobs/{job_id}").json()
+        if status["status"] == "cancelled":
+            break
+        time.sleep(0.1)
+    assert status["status"] == "cancelled"
 
 
 def test_unknown_run_is_reported_clearly(client: TestClient) -> None:

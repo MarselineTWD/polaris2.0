@@ -18,7 +18,7 @@ import { initTimeline, renderTimeline, updateSceneSummary, updateTimeUI } from "
 import { initProject, renderProject, setProblems, toggleSatelliteFailure } from "./panels/project.js";
 import { initCompare, openCompare, primeSelection, renderCompare } from "./panels/compare.js";
 import { initAnalysis, openAnalysis, renderAnalysis } from "./panels/analysis.js";
-import { initCoverage, openCoverage, renderCoverage } from "./panels/coverage.js";
+import { initCoverage, renderCoverage, setCoverageMode, updateCoverageTime } from "./panels/coverage.js";
 
 state.presets = [];
 let viewer = null;
@@ -29,6 +29,7 @@ const initialUrlState = readUrlState();
 let urlSyncTimer = null;
 let sceneAssetsReady = false;
 let initialScenarioReady = false;
+let activeJobId = null;
 
 function updateSceneLoading() {
   if (sceneAssetsReady && initialScenarioReady) $("scene-loading").hidden = true;
@@ -73,6 +74,7 @@ async function recompute({ silent = false, reframe = false } = {}) {
     }
     if (!state.selection) setState({ selection: { type: "client", id: clientId } });
     renderAll();
+    if (state.viewMode === "2d") renderCoverage(state);
     if (!silent) {
       toast(`Расчёт выполнен за ${decimal(bundle.summary.elapsed_ms, 0)} мс`, "ok");
     }
@@ -119,6 +121,7 @@ function renderAll() {
   renderTimeline(state);
   renderInspector(state);
   updateSceneSummary(state);
+  if (state.viewMode === "2d") updateCoverageTime(state);
 }
 
 function renderHeader() {
@@ -202,19 +205,25 @@ function animate(now) {
     }
     const visibleIndices = visibilityCache.indices;
 
-    viewer.render({
-      seconds: state.timeSeconds,
-      step,
-      routeIndices: new Set(routeIndices),
-      routeSites,
-      selectedIndex,
-      trackedIndex,
-      visibilitySiteId,
-      visibleIndices,
-      showLinks: state.showLinks,
-      showOrbits: state.showOrbits,
-      showRoute: state.showRoute,
-    });
+    if (state.viewMode === "3d") {
+      viewer.render({
+        seconds: state.timeSeconds,
+        step,
+        routeIndices: new Set(routeIndices),
+        routeSites,
+        selectedIndex,
+        trackedIndex,
+        visibilitySiteId,
+        visibleIndices,
+        showLinks: state.showLinks,
+        showOrbits: state.showOrbits,
+        showRoute: state.showRoute,
+      });
+    } else if (state.playing) {
+      // Положения на плоской карте тоже интерполируются каждый кадр.
+      // Состояние связей меняется по расчётным шагам, а геометрия движется плавно.
+      updateCoverageTime(state);
+    }
   }
   requestAnimationFrame(animate);
 }
@@ -236,6 +245,7 @@ function setTime(seconds) {
   updateTimeUI(state);
   updateSceneSummary(state);
   renderInspector(state);
+  if (state.viewMode === "2d") updateCoverageTime(state);
 }
 
 function nextGap() {
@@ -267,6 +277,7 @@ function selectClient(clientId) {
   renderInspector(state);
   renderTimeline(state);
   updateSceneSummary(state);
+  if (state.viewMode === "2d") updateCoverageTime(state);
 }
 
 function selectNode(id) {
@@ -323,6 +334,36 @@ function requestVariantName(suggested) {
   });
 }
 
+function downloadJson(payload, filename) {
+  const safeName = filename.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").slice(0, 140);
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = safeName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function exportSavedVariant(variantId) {
+  const variant = state.variants.find((item) => item.id === variantId);
+  if (!variant) {
+    toast("Сохранённый вариант больше не найден", "warn");
+    return;
+  }
+  try {
+    const scenario = await api.exportVariant(variantId);
+    downloadJson(scenario, `${variant.label}-variant.json`);
+    toast(`Вариант «${variant.label}» экспортирован`, "ok");
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      toast("Вариант больше не найден. Обновите список сравнения.", "warn");
+    } else reportError(error);
+  }
+}
+
 async function refreshVariants() {
   try {
     const { variants } = await api.variants();
@@ -334,12 +375,15 @@ async function refreshVariants() {
   }
 }
 
-async function runComparison(baseId, otherId) {
-  setBusy(true, "Сравниваем варианты", "Оба считаются на одинаковой сетке времени");
+async function runComparison(variantIds) {
+  setBusy(
+    true,
+    "Сравниваем варианты",
+    `${variantIds.length} ${plural(variantIds.length, "конфигурация считается", "конфигурации считаются", "конфигураций считаются")} на одинаковой сетке времени`
+  );
   try {
-    comparison = await api.compare({
-      base_variant_id: baseId,
-      other_variant_id: otherId,
+    comparison = await api.compareMany({
+      variant_ids: variantIds,
       options: { strategy: state.strategy },
     });
     renderCompare(state, comparison);
@@ -352,12 +396,23 @@ async function runComparison(baseId, otherId) {
   }
 }
 
-async function runBackgroundJob(kind, starter, title) {
+async function runBackgroundJob(kind, starter, title, { cancellable = false } = {}) {
   if (!state.applied) return;
   setBusy(true, title, "Запускаем…");
   try {
     const job = await starter();
+    if (cancellable) {
+      activeJobId = job.id;
+      $("cancel-job").hidden = false;
+      $("cancel-job").disabled = false;
+      $("cancel-job").textContent = "Отменить расчёт";
+    }
     const result = await awaitJob(job.id, (progress) => {
+      if (progress.status === "cancelling") {
+        $("blocking-title").textContent = "Останавливаем подбор";
+        $("blocking-detail").textContent = "Завершаем текущую порцию расчётов";
+        return;
+      }
       const percentDone = Math.round((progress.progress || 0) * 100);
       $("blocking-detail").innerHTML =
         `<div class="progress-bar"><i style="width:${percentDone}%"></i></div>` +
@@ -367,8 +422,11 @@ async function runBackgroundJob(kind, starter, title) {
     renderAnalysis(state);
     toast("Анализ завершён", "ok");
   } catch (error) {
-    reportError(error);
+    if (error instanceof ApiError && error.code === "job_cancelled") toast("Подбор отменён", "ok");
+    else reportError(error);
   } finally {
+    activeJobId = null;
+    $("cancel-job").hidden = true;
     setBusy(false);
   }
 }
@@ -383,12 +441,68 @@ function applyOptimized() {
   renderHeader();
 }
 
+function showViewMode(mode) {
+  if (!state.bundle || !["3d", "2d"].includes(mode)) return;
+  setState({ viewMode: mode });
+  setCoverageMode(state, mode);
+  if (mode === "2d") renderCoverage(state);
+}
+
+function initInspectorResize() {
+  const handle = $("inspector-resizer");
+  const root = document.documentElement;
+  const stored = Number(localStorage.getItem("polaris-inspector-width"));
+  if (Number.isFinite(stored) && stored >= 300) root.style.setProperty("--inspector-width", `${stored}px`);
+
+  const applyWidth = (clientX) => {
+    const maximum = Math.max(300, Math.min(650, window.innerWidth - 480));
+    const width = Math.round(Math.max(300, Math.min(maximum, window.innerWidth - clientX)));
+    root.style.setProperty("--inspector-width", `${width}px`);
+    localStorage.setItem("polaris-inspector-width", String(width));
+  };
+  handle.addEventListener("pointerdown", (event) => {
+    if (window.innerWidth <= 840) return;
+    handle.setPointerCapture(event.pointerId);
+    document.body.classList.add("resizing-inspector");
+    applyWidth(event.clientX);
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (handle.hasPointerCapture(event.pointerId)) applyWidth(event.clientX);
+  });
+  const finish = (event) => {
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    document.body.classList.remove("resizing-inspector");
+  };
+  handle.addEventListener("pointerup", finish);
+  handle.addEventListener("pointercancel", finish);
+  handle.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    const current = parseFloat(getComputedStyle(root).getPropertyValue("--inspector-width")) || 372;
+    applyWidth(window.innerWidth - current + (event.key === "ArrowLeft" ? -24 : 24));
+  });
+}
+
 // --------------------------------------------------------------------------- //
 // Привязка обработчиков
 // --------------------------------------------------------------------------- //
 
 function bindControls() {
   bindOverlayDismiss();
+  initInspectorResize();
+
+  $("cancel-job").addEventListener("click", async (event) => {
+    if (!activeJobId) return;
+    event.currentTarget.disabled = true;
+    event.currentTarget.textContent = "Отменяем…";
+    try {
+      await api.cancelJob(activeJobId);
+      $("blocking-title").textContent = "Останавливаем подбор";
+      $("blocking-detail").textContent = "Завершаем текущую порцию расчётов";
+    } catch (error) {
+      reportError(error);
+    }
+  });
 
   $("calculate-button").addEventListener("click", async () => {
     const button = $("calculate-button");
@@ -397,14 +511,23 @@ function bindControls() {
     button.disabled = false;
   });
 
-  $("export-button").addEventListener("click", () => {
-    if (!state.bundle) {
-      toast("Сначала выполните расчёт", "warn");
+  $("export-button").addEventListener("click", async (event) => {
+    if (!state.bundle || state.status !== "ready" || state.dirty) {
+      toast("Сначала выполните расчёт текущей конфигурации", "warn");
       return;
     }
-    // Переход по ссылке: браузер сам сохранит файл, присланный сервисом.
-    window.location.href = api.exportUrl(state.bundle.runId);
-    toast("Результат выгружается в формате cosmo-A-result-1.0", "ok");
+    event.currentTarget.disabled = true;
+    try {
+      const payload = await api.exportRun(state.bundle.runId);
+      downloadJson(payload, `${state.projectTitle}-result.json`);
+      toast("Результат экспортирован в формате cosmo-A-result-1.0", "ok");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        toast("Расчёт больше не доступен. Нажмите «Пересчитать» и повторите экспорт.", "warn");
+      } else reportError(error);
+    } finally {
+      event.currentTarget.disabled = false;
+    }
   });
 
   document.querySelectorAll("[data-stage]").forEach((button) =>
@@ -564,6 +687,7 @@ function bindControls() {
     },
     refresh: () => renderCompare(state, comparison),
     saveCurrent: saveCurrentVariant,
+    exportVariant: exportSavedVariant,
     compare: runComparison,
     remove: async (id) => {
       comparison = null;
@@ -595,31 +719,20 @@ function bindControls() {
       runBackgroundJob(
         "optimize",
         () => api.optimize(state.applied, 160),
-        "Подбираем конфигурацию"
+        "Подбираем конфигурацию",
+        { cancellable: true }
       ),
     applyOptimized,
   });
 
   initCoverage({
-    open: async () => {
-      if (!state.bundle) return;
-      openCoverage();
-      renderCoverage(state);
-      if (state.coverage?.runId === state.bundle.runId) return;
-      setBusy(true, "Строим карту покрытия", "Проверяем маршрут по сетке широта/долгота");
-      try {
-        const runId = state.bundle.runId;
-        const data = await api.coverage(runId);
-        if (state.bundle?.runId !== runId) return;
-        setState({ coverage: { runId, data } });
-        renderCoverage(state);
-      } catch (error) {
-        reportError(error);
-      } finally {
-        setBusy(false);
-      }
+    changeMode: showViewMode,
+    selectSatellite: (id) => {
+      selectNode(id);
+      updateCoverageTime(state);
     },
   });
+  setCoverageMode(state, state.viewMode);
 }
 
 // --------------------------------------------------------------------------- //

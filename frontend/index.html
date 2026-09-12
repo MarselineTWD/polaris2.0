@@ -25,12 +25,11 @@
       <div class="calculation-state" id="calc-state"><span></span><b>Готов к расчёту</b></div>
 
       <div class="top-actions">
-        <button class="button button-subtle" id="project-button" type="button"><b aria-hidden="true">⚙</b><span>Проект</span></button>
-        <button class="button button-subtle" id="analysis-button" type="button"><b aria-hidden="true">◎</b><span>Анализ</span></button>
-        <button class="button button-subtle" id="coverage-button" type="button"><b aria-hidden="true">▦</b><span>Карта</span></button>
-        <button class="button button-subtle" id="compare-button" type="button"><b aria-hidden="true">⇄</b><span>Сравнить</span></button>
-        <button class="button button-subtle" id="export-button" type="button"><b aria-hidden="true">↓</b><span>Экспорт</span></button>
-        <button class="button button-primary" id="calculate-button" type="button"><b aria-hidden="true">▶</b><span>Пересчитать</span></button>
+        <button class="button button-subtle" id="project-button" type="button" aria-label="Параметры проекта" title="Параметры проекта"><b aria-hidden="true">⚙</b><span>Проект</span></button>
+        <button class="button button-subtle" id="analysis-button" type="button" aria-label="Анализ устойчивости" title="Анализ устойчивости"><b aria-hidden="true">◎</b><span>Анализ</span></button>
+        <button class="button button-subtle" id="compare-button" type="button" aria-label="Сравнить варианты" title="Сравнить варианты"><b aria-hidden="true">⇄</b><span>Сравнить</span></button>
+        <button class="button button-subtle" id="export-button" type="button" aria-label="Экспортировать результат" title="Экспортировать результат"><b aria-hidden="true">↓</b><span>Экспорт</span></button>
+        <button class="button button-primary" id="calculate-button" type="button" aria-label="Пересчитать проект"><b aria-hidden="true">▶</b><span>Пересчитать</span></button>
       </div>
     </header>
 
@@ -38,6 +37,9 @@
       <main class="main-column">
         <section class="space-view" id="space-view">
           <canvas id="space-canvas" aria-label="Интерактивная схема Земли и спутниковой группировки"></canvas>
+          <div class="coverage-view" id="coverage-view" hidden>
+            <div class="coverage-content" id="coverage-content"></div>
+          </div>
           <div class="scene-loading" id="scene-loading" role="status">
             <span class="loading-planet" aria-hidden="true"></span>
             <div><strong>Готовим модель Земли</strong><small>Загружаем текстуры и расчётный сценарий</small></div>
@@ -84,6 +86,14 @@
               <div><span>Состояние сети</span><strong id="timeline-time">00:00:00</strong></div>
             </div>
             <div class="timeline-actions">
+              <div class="timeline-zoom" role="group" aria-label="Масштаб и положение шкалы времени">
+                <button id="timeline-pan-prev" type="button" aria-label="Предыдущий участок времени" title="Предыдущий участок">‹</button>
+                <button id="timeline-zoom-out" type="button" aria-label="Уменьшить масштаб шкалы" title="Уменьшить масштаб">−</button>
+                <span id="timeline-zoom-label">24 ч</span>
+                <button id="timeline-zoom-in" type="button" aria-label="Увеличить масштаб шкалы" title="Увеличить масштаб">+</button>
+                <button id="timeline-pan-next" type="button" aria-label="Следующий участок времени" title="Следующий участок">›</button>
+                <button class="timeline-zoom-reset" id="timeline-zoom-reset" type="button" title="Показать весь расчёт">Весь период</button>
+              </div>
               <label>Скорость
                 <select id="speed-select">
                   <option value="60">×60</option>
@@ -109,10 +119,16 @@
             <span><i class="cause-no-gateway"></i>Нет контакта со шлюзом</span>
             <span><i class="cause-network-split"></i>Разрыв сети</span>
           </div>
+
+          <div class="view-mode-switch" role="group" aria-label="Режим представления">
+            <button class="active" data-view-mode="3d" type="button" aria-pressed="true">3D-глобус</button>
+            <button data-view-mode="2d" type="button" aria-pressed="false">2D-карта</button>
+          </div>
         </section>
       </main>
 
       <aside class="inspector" id="inspector">
+        <div class="inspector-resizer" id="inspector-resizer" role="separator" aria-label="Изменить ширину правой панели" aria-orientation="vertical" tabindex="0"><span></span></div>
         <div id="selection-content"></div>
       </aside>
     </div>
@@ -152,16 +168,6 @@
     </section>
   </div>
 
-  <div class="modal-backdrop" id="coverage-modal" aria-hidden="true">
-    <section class="modal-panel coverage-panel" role="dialog" aria-modal="true" aria-labelledby="coverage-title">
-      <div class="drawer-header">
-        <div><span>ГЕОГРАФИЯ ПОКРЫТИЯ</span><h2 id="coverage-title">Доступность маршрута по широтам</h2></div>
-        <button class="icon-button" data-close-modal="coverage-modal" type="button" aria-label="Закрыть">×</button>
-      </div>
-      <div class="modal-content" id="coverage-content"></div>
-    </section>
-  </div>
-
   <dialog class="name-dialog" id="save-variant-dialog" aria-labelledby="save-variant-title">
     <form method="dialog">
       <div class="dialog-eyebrow">СОХРАНЕНИЕ ВАРИАНТА</div>
@@ -178,7 +184,7 @@
 
   <div class="toast" id="toast" role="status"></div>
   <div class="blocking-overlay" id="blocking-overlay" hidden>
-    <div class="blocking-card"><div class="spinner"></div><strong id="blocking-title">Считаем…</strong><span id="blocking-detail"></span></div>
+    <div class="blocking-card"><div class="spinner"></div><strong id="blocking-title">Считаем…</strong><span id="blocking-detail"></span><button class="button button-subtle cancel-job" id="cancel-job" type="button" hidden>Отменить расчёт</button></div>
   </div>
 
   <script>
